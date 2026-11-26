@@ -1,0 +1,28 @@
+[Unit]
+Description=Moley: routes traffic through your VPNs and proxies, by your rules
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=moley
+Group=moley
+ExecStart=@EXE@ service --system
+Restart=on-failure
+RestartSec=2
+# TUN, routes and the kill switch's nftables table; reading other users'
+# sockets so process rules can name programs.
+AmbientCapabilities=CAP_NET_ADMIN CAP_NET_BIND_SERVICE CAP_NET_RAW CAP_DAC_READ_SEARCH CAP_SYS_PTRACE
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_BIND_SERVICE CAP_NET_RAW CAP_DAC_READ_SEARCH CAP_SYS_PTRACE
+NoNewPrivileges=yes
+StateDirectory=moley
+StateDirectoryMode=0700
+RuntimeDirectory=moley
+RuntimeDirectoryMode=0750
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=yes
+DeviceAllow=/dev/net/tun rw
+
+[Install]
+WantedBy=multi-user.target

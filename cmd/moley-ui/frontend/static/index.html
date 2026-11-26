@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="color-scheme" content="dark">
+  <title>Moley</title>
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+  <main id="views">
+    <!-- Home: where everything without a rule goes, and how fast. -->
+    <section id="home" class="view">
+      <div id="hero" class="panel hero" data-state="idle">
+        <div class="hero-top">
+          <button id="place" class="place" type="button" aria-haspopup="dialog">
+            <span id="title" class="title">Moley</span>
+            <span class="chev" id="chev"></span>
+          </button>
+          <span id="country" class="country" hidden></span>
+        </div>
+        <p class="status" id="status"><span id="state" class="state"></span><span id="proto" class="proto"></span></p>
+
+        <div class="ring" id="ring">
+          <svg viewBox="0 0 240 240" aria-hidden="true">
+            <defs>
+              <radialGradient id="disc" cx="50%" cy="38%" r="65%">
+                <stop offset="0" stop-color="#1d2422"/>
+                <stop offset="1" stop-color="#090b0a"/>
+              </radialGradient>
+            </defs>
+            <g id="ticks" class="ticks"></g>
+            <g id="segs" class="segs"></g>
+            <circle cx="120" cy="120" r="66" fill="url(#disc)" class="disc"/>
+            <circle cx="120" cy="120" r="66" fill="none" class="disc-edge"/>
+          </svg>
+          <button id="power" class="power" type="button"></button>
+        </div>
+
+        <div class="hero-foot">
+          <span id="where" class="where"></span>
+          <span id="quality" class="quality"><span id="ms"></span><span id="grade"></span><span class="bars" id="bars"><i></i><i></i><i></i><i></i><i></i></span></span>
+        </div>
+      </div>
+
+      <div class="toggles">
+        <button id="every" class="panel toggle" type="button" role="switch" aria-checked="false">
+          <span class="toggle-head"><span class="ico" data-icon="apps"></span><span class="knob"></span></span>
+          <span class="label">All apps</span>
+          <span class="value" id="every-note"></span>
+        </button>
+        <button id="kill" class="panel toggle" type="button" role="switch" aria-checked="false">
+          <span class="toggle-head"><span class="ico" data-icon="lock"></span><span class="knob"></span></span>
+          <span class="label">Kill switch</span>
+          <span class="value" id="kill-note"></span>
+        </button>
+      </div>
+
+      <div class="panel speed">
+        <div class="speed-nums">
+          <div class="num rx"><span class="label"><span class="ico" data-icon="rx"></span>Download</span><span class="big"><b id="rx">0</b><small id="rx-unit">KB/S</small></span></div>
+          <div class="num tx"><span class="label"><span class="ico" data-icon="tx"></span>Upload</span><span class="big"><b id="tx">0</b><small id="tx-unit">KB/S</small></span></div>
+        </div>
+        <svg id="chart" class="chart" viewBox="0 0 356 52" preserveAspectRatio="none" aria-hidden="true">
+          <defs>
+            <linearGradient id="fill-rx" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2ee6a8" stop-opacity=".28"/><stop offset="1" stop-color="#2ee6a8" stop-opacity="0"/></linearGradient>
+            <linearGradient id="fill-tx" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#8b7cff" stop-opacity=".22"/><stop offset="1" stop-color="#8b7cff" stop-opacity="0"/></linearGradient>
+          </defs>
+          <g class="grid"><path d="M0 13.5H356M0 26.5H356M0 39.5H356"/></g>
+          <g id="plot">
+            <path id="area-tx" fill="url(#fill-tx)"/>
+            <path id="area-rx" fill="url(#fill-rx)"/>
+            <path id="line-tx" class="line tx"/>
+            <path id="line-rx" class="line rx"/>
+          </g>
+        </svg>
+      </div>
+    </section>
+
+    <section id="page" class="view" hidden></section>
+  </main>
+
+  <nav id="tabs" class="tabs" role="tablist">
+    <span class="tab-glow" id="tab-glow"></span>
+    <button type="button" role="tab" data-view="home" aria-selected="true"><span class="ico" data-icon="home"></span>Home</button>
+    <button type="button" role="tab" data-view="activity" aria-selected="false"><span class="ico" data-icon="pulse"></span>Activity</button>
+    <button type="button" role="tab" data-view="rules" aria-selected="false"><span class="ico" data-icon="rules"></span>Rules</button>
+    <button type="button" role="tab" data-view="settings" aria-selected="false"><span class="ico" data-icon="settings"></span>Settings</button>
+  </nav>
+
+  <div id="scrim" class="scrim" hidden></div>
+  <div id="sheet" class="sheet" role="dialog" aria-modal="true" hidden></div>
+
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>

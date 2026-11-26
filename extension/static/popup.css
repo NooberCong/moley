@@ -1,0 +1,221 @@
+:root {
+  --page: #f4f6f9;
+  --surface: #ffffff;
+  --ink: #142033;
+  --muted: #6a7686;
+  --hairline: #e4e8ee;
+  --hover: #eef1f5;
+  --accent: #0b8a7f;
+  --accent-soft: #e3f4f1;
+  --amber: #c98a12;
+  --rust: #c4502b;
+
+  /* The route card stays dark in both themes: it's the product's face. */
+  --card: #12233a;
+  --card-ink: #f3f7fb;
+  --card-muted: #93a6bc;
+  --card-node: #1e3350;
+  --tone: #5fe0cf;
+
+  color-scheme: light dark;
+  background: var(--page);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --page: #0f1a29;
+    --surface: #162438;
+    --ink: #e8eef5;
+    --muted: #8d9cb0;
+    --hairline: #22344c;
+    --hover: #1c2d45;
+    --accent: #4fd4c2;
+    --accent-soft: #173b44;
+    --amber: #e6b04c;
+    --rust: #f07a56;
+    --card: #1a2f4b;
+    --card-node: #26405f;
+  }
+}
+
+* { box-sizing: border-box; margin: 0; }
+[hidden] { display: none !important; }
+
+/* Set on body: Chrome's extension stylesheet shrinks body text to 75%. */
+body {
+  width: 340px; padding: 10px;
+  font: 13px/1.4 "Segoe UI Variable Text", "Segoe UI", Inter, system-ui, sans-serif;
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+}
+
+button { font: inherit; color: inherit; cursor: pointer; }
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+svg { display: block; width: 100%; height: 100%; }
+
+/* --- Route card -------------------------------------------------------- */
+
+.card {
+  position: relative; overflow: hidden;
+  padding: 16px 18px 18px; border-radius: 18px;
+  background: var(--card); color: var(--card-ink);
+  isolation: isolate;
+}
+/* The glow comes from the exit and takes its colour: it is the status. */
+.card::before {
+  content: ""; position: absolute; inset: -40% -30% auto auto; z-index: -1;
+  width: 260px; height: 220px; border-radius: 50%;
+  background: radial-gradient(closest-side, color-mix(in srgb, var(--tone) 26%, transparent), transparent);
+  transition: background-color 300ms;
+}
+.card[data-tone="tunnel"] { --tone: #5fe0cf; }
+.card[data-tone="direct"] { --tone: #9db2ca; }
+.card[data-tone="idle"],
+.card[data-tone="off"]    { --tone: #6f839c; }
+.card[data-tone="block"],
+.card[data-tone="down"]   { --tone: #ff8a63; }
+
+.top { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 22px; }
+.site {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: var(--card-muted); font-weight: 600; font-size: 12.5px;
+}
+
+.route { display: flex; align-items: center; margin: 18px 0 16px; }
+.node {
+  flex: none; display: grid; place-items: center;
+  width: 34px; height: 34px; border-radius: 50%;
+  background: var(--card-node); color: var(--card-ink);
+  font: 700 14px/1 "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
+}
+.node svg { width: 17px; height: 17px; }
+.node img { width: 18px; height: 18px; border-radius: 4px; }
+.node.to {
+  background: var(--tone); color: var(--card);
+  box-shadow: 0 0 0 5px color-mix(in srgb, var(--tone) 18%, transparent);
+}
+.wire {
+  position: relative; flex: 1; height: 2px; margin: 0 -1px; overflow: hidden;
+  background: linear-gradient(90deg, var(--card-node), var(--tone));
+}
+[data-tone="off"] .wire,
+[data-tone="idle"] .wire { background: repeating-linear-gradient(90deg, var(--card-node) 0 6px, transparent 6px 11px); }
+[data-tone="down"] .wire,
+[data-tone="block"] .wire {
+  background: linear-gradient(90deg, var(--card-node) 0 42%, transparent 42% 58%, var(--tone) 58%);
+}
+.pulse { display: none; }
+
+h1 {
+  font: 600 26px/1.15 "Segoe UI Variable Display", "Segoe UI", Inter, system-ui, sans-serif;
+  letter-spacing: -0.015em;
+  overflow-wrap: anywhere;
+}
+.sub { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; margin-top: 4px; color: var(--card-muted); }
+.chip {
+  padding: 2px 9px; border-radius: 999px;
+  background: color-mix(in srgb, var(--tone) 16%, transparent);
+  color: color-mix(in srgb, var(--tone) 70%, var(--card-ink));
+  font-size: 11.5px; font-weight: 600;
+}
+
+/* On/off for this browser. */
+.switch {
+  position: relative; flex: none; width: 36px; height: 20px; padding: 0;
+  border: 0; border-radius: 999px; background: var(--card-node);
+}
+.switch::after {
+  content: ""; position: absolute; top: 3px; left: 3px;
+  width: 14px; height: 14px; border-radius: 50%; background: var(--card-muted);
+}
+.switch[aria-checked="true"] { background: var(--accent); }
+.switch[aria-checked="true"]::after { left: 19px; background: #fff; }
+
+/* --- Exit list --------------------------------------------------------- */
+
+#pick { margin-top: 8px; }
+ul { list-style: none; padding: 0; }
+/* Built-ins first, then your tunnels. */
+li.split { height: 1px; margin: 6px 12px; background: var(--hairline); }
+
+.exit {
+  display: flex; align-items: center; gap: 12px;
+  width: 100%; padding: 7px 10px; border: 0; border-radius: 12px;
+  background: none; text-align: left;
+}
+.exit:hover { background: var(--hover); }
+.exit[aria-checked="true"] { background: var(--accent-soft); }
+
+.tile {
+  position: relative; flex: none; display: grid; place-items: center;
+  width: 32px; height: 32px; border-radius: 10px;
+  background: var(--surface); color: var(--muted);
+  box-shadow: inset 0 0 0 1px var(--hairline);
+}
+.tile svg { width: 17px; height: 17px; }
+.exit[aria-checked="true"] .tile { background: var(--accent); color: #fff; box-shadow: none; }
+/* Live state of a tunnel, on the tile's corner. */
+.tile.up::after, .tile.wait::after, .tile.down::after {
+  content: ""; position: absolute; right: -2px; bottom: -2px;
+  width: 10px; height: 10px; border-radius: 50%;
+  border: 2px solid var(--page);
+}
+.tile.up::after { background: #22b07d; }
+.tile.wait::after { background: var(--amber); }
+.tile.down::after { background: var(--rust); }
+.exit:hover .tile::after { border-color: var(--hover); }
+.exit[aria-checked="true"] .tile::after { border-color: var(--accent-soft); }
+
+.text { flex: 1; min-width: 0; display: grid; }
+.name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.detail { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.check { flex: none; width: 18px; height: 18px; color: var(--accent); opacity: 0; transform: scale(.6); }
+.check svg { stroke-width: 2.4; }
+.exit[aria-checked="true"] .check { opacity: 1; transform: none; }
+
+/* --- Notice ------------------------------------------------------------ */
+
+.notice { padding: 14px 8px 4px; color: var(--muted); }
+.notice p { line-height: 1.6; }
+.cmd {
+  display: inline-flex; align-items: center; gap: 2px; margin: 0 2px; vertical-align: middle;
+  padding: 1px 2px 1px 8px; border-radius: 8px;
+  background: var(--surface); box-shadow: inset 0 0 0 1px var(--hairline);
+}
+.cmd code { font: 12px/1.6 "Cascadia Code", Consolas, ui-monospace, monospace; color: var(--ink); }
+.cmd button { width: 24px; height: 22px; padding: 4px; border: 0; border-radius: 6px; background: none; color: var(--muted); }
+.cmd button:hover { background: var(--hover); color: var(--ink); }
+
+.actions { display: flex; gap: 8px; margin-top: 12px; }
+.actions .btn { flex: 1; }
+#notice-text[hidden] + .actions { margin-top: 0; }
+.actions:empty { display: none; }
+.btn {
+  padding: 8px 14px; border: 0; border-radius: 10px;
+  background: var(--surface); box-shadow: inset 0 0 0 1px var(--hairline);
+  font-weight: 600;
+}
+.btn:hover { background: var(--hover); }
+.btn.primary { background: var(--accent); color: #fff; box-shadow: none; }
+.btn.primary:hover { background: color-mix(in srgb, var(--accent) 88%, #000); }
+
+/* --- Motion ------------------------------------------------------------ */
+
+@media (prefers-reduced-motion: no-preference) {
+  .exit, .tile, .switch, .switch::after, .check { transition: all 160ms cubic-bezier(.2, .8, .2, 1); }
+
+  /* Opening: the route draws from the site to the exit. */
+  .wire { animation: draw 520ms cubic-bezier(.2, .8, .2, 1) both; transform-origin: left; }
+  .node.to { animation: arrive 360ms 380ms cubic-bezier(.2, .8, .2, 1.3) both; }
+  @keyframes draw { from { transform: scaleX(0); } }
+  @keyframes arrive { from { transform: scale(.4); opacity: 0; } }
+
+  /* A live tunnel carries traffic: a light travels along it. */
+  [data-tone="tunnel"] .pulse {
+    display: block; position: absolute; inset: 0 auto 0 0; width: 40%;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .85), transparent);
+    animation: flow 2.6s 900ms ease-in-out infinite;
+  }
+  @keyframes flow { from { transform: translateX(-100%); } 60%, to { transform: translateX(260%); } }
+}

@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="color-scheme" content="light dark">
+  <title>Moley</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header id="card" class="card" data-tone="idle">
+    <div class="top">
+      <span id="site" class="site"></span>
+      <button id="power" class="switch" type="button" role="switch" aria-checked="true" aria-label="Route this browser through Moley" hidden></button>
+    </div>
+    <div class="route" aria-hidden="true">
+      <span id="from" class="node from"></span>
+      <span class="wire"><span class="pulse"></span></span>
+      <span id="to" class="node to"></span>
+    </div>
+    <h1 id="title"></h1>
+    <p class="sub"><span id="sub"></span><span id="why" class="chip" hidden></span></p>
+  </header>
+
+  <section id="pick" hidden>
+    <ul id="exits" role="radiogroup" aria-label="Route this site through"></ul>
+  </section>
+
+  <section id="notice" class="notice" hidden>
+    <p id="notice-text"></p>
+    <div id="notice-actions" class="actions"></div>
+  </section>
+
+  <script type="module" src="popup.js"></script>
+</body>
+</html>

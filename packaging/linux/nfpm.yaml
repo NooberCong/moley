@@ -1,0 +1,53 @@
+# .deb and .rpm (nfpm). Paths are relative to the repository root; the
+# build script renders the units and stages the binaries in dist/linux.
+name: moley
+arch: amd64
+platform: linux
+version: ${VERSION}
+section: net
+priority: optional
+maintainer: Moley
+description: |
+  Routes your traffic through your VPNs and proxies (WireGuard, AmneziaWG,
+  OpenVPN, Shadowsocks, VLESS and more) by your rules: per site, per app or
+  for the whole computer, with a kill switch, a tray app and a CLI.
+license: GPL-3.0-or-later
+depends:
+  - nftables
+recommends:
+  - libgtk-4-1
+  - libwebkitgtk-6.0-4
+overrides:
+  rpm:
+    depends: [nftables]
+    recommends: [gtk4, webkitgtk6.0]
+contents:
+  - src: dist/linux/moley
+    dst: /usr/bin/moley
+  - src: dist/linux/moley-ui
+    dst: /usr/bin/moley-ui
+  - src: dist/linux/units/moley.service
+    dst: /usr/lib/systemd/system/moley.service
+  - src: dist/linux/units/moley-killswitch.service
+    dst: /usr/lib/systemd/system/moley-killswitch.service
+  - src: packaging/linux/moley.desktop
+    dst: /usr/share/applications/moley.desktop
+  - src: cmd/moley-ui/build/icon.png
+    dst: /usr/share/icons/hicolor/256x256/apps/moley.png
+  - src: extension/dist/
+    dst: /usr/share/moley/extension/
+    type: tree
+  - src: dist/linux/com.moley.host.json
+    dst: /etc/opt/chrome/native-messaging-hosts/com.moley.host.json
+    type: config
+  - src: dist/linux/com.moley.host.json
+    dst: /etc/chromium/native-messaging-hosts/com.moley.host.json
+    type: config
+  - src: dist/linux/com.moley.host.json
+    dst: /etc/opt/edge/native-messaging-hosts/com.moley.host.json
+    type: config
+  - src: LICENSE
+    dst: /usr/share/doc/moley/copyright
+scripts:
+  postinstall: packaging/linux/postinstall.sh
+  preremove: packaging/linux/preremove.sh

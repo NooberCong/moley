@@ -1,0 +1,14 @@
+[Unit]
+Description=Moley persistent kill switch: block traffic until Moley is up
+DefaultDependencies=no
+Before=network-pre.target
+Wants=network-pre.target
+ConditionPathExists=/var/lib/moley/killswitch-persistent
+
+[Service]
+Type=oneshot
+ExecStart=@EXE@ service restore-block
+RemainAfterExit=yes
+
+[Install]
+WantedBy=sysinit.target

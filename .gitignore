@@ -1,0 +1,9 @@
+/bin/
+/extension/node_modules/
+/extension/dist/
+/dist/
+/cmd/moley-ui/frontend/node_modules/
+/cmd/moley-ui/frontend/dist/
+*.syso
+/cmd/moley-ui/moley-ui
+/cmd/moley-ui/moley-ui.exe

@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Moley
+Comment=Route your traffic through your VPNs and proxies, by your rules
+Exec=moley-ui
+Icon=moley
+Categories=Network;
+StartupNotify=false

@@ -1,0 +1,4 @@
+# LF everywhere: the shell scripts run in Linux containers even from a Windows checkout.
+* text=auto eol=lf
+*.png binary
+*.ico binary

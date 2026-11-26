@@ -1,0 +1,13 @@
+{
+  "name": "moley-extension",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc && node build.mjs",
+    "check": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.3.8",
+    "typescript": "^7.0.2"
+  }
+}
