@@ -70,6 +70,9 @@ type Env struct {
 	// LogOutput is sing-box's own log sink. The engine sets os.DevNull and
 	// reads logs through its platform writer instead.
 	LogOutput string
+	// Held keeps the network adapter up whatever the config says: a client
+	// holds system routing (see model.Config.SystemRouting).
+	Held bool
 }
 
 type Output struct {
@@ -144,7 +147,7 @@ func (c *compiler) run() (*Output, error) {
 
 	// 0. System mode: learn each connection's name (TLS SNI, HTTP Host, or
 	// the FakeIP it was given), and answer DNS ourselves.
-	if c.cfg.SystemRouting() {
+	if c.cfg.SystemRouting(c.env.Held) {
 		c.helper(obj{"inbound": list{InboundTUN}, "action": "sniff"})
 		c.helper(obj{"inbound": list{InboundTUN}, "protocol": list{"dns"}, "action": "hijack-dns"})
 	}
@@ -209,7 +212,7 @@ func (c *compiler) run() (*Output, error) {
 	// 5. Private addresses stay on the LAN unless a rule above said otherwise.
 	c.route(obj{"ip_is_private": true}, model.ExitDirect, LANRuleID)
 
-	port :=c.cfg.Settings.Port()
+	port := c.cfg.Settings.Port()
 	logLevel := c.env.LogLevel
 	if logLevel == "" {
 		logLevel = "info"
@@ -227,7 +230,7 @@ func (c *compiler) run() (*Output, error) {
 		// Process rules live in rule-set files the core can't see ahead of time.
 		"find_process": c.cfg.HasProcessRules(),
 	}
-	if c.cfg.SystemRouting() {
+	if c.cfg.SystemRouting(c.env.Held) {
 		// Apps resolve names to placeholder addresses, so the real name is
 		// known when they connect and routes exactly like the browser path.
 		// Names that must work without Moley's routing resolve for real.
@@ -259,7 +262,7 @@ func (c *compiler) run() (*Output, error) {
 	}
 	if c.env.CacheFile != "" {
 		cache := obj{"enabled": true, "path": c.env.CacheFile}
-		if c.cfg.SystemRouting() {
+		if c.cfg.SystemRouting(c.env.Held) {
 			cache["store_fakeip"] = true // apps keep their addresses across restarts
 		}
 		opts["experimental"] = obj{"cache_file": cache}

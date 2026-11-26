@@ -38,6 +38,9 @@ type Daemon struct {
 	// modeErr says why the configured system mode isn't running (this
 	// daemon lacks the privileges, say); browser routing still works.
 	modeErr string
+	// holds keep the adapter up for a while (holds.go); runtime only.
+	holds     map[string]Hold
+	holdTimer *time.Timer
 
 	changeMu sync.Mutex
 	changed  chan struct{} // closed on every config change (events)
@@ -61,7 +64,7 @@ func Open(dir string, logs *engine.Logs) (*Daemon, error) {
 		return nil, err
 	}
 	d := &Daemon{dir: dir, logs: logs, sealer: platform.NewSealer(), secret: secret,
-		stopped: make(chan struct{}), changed: make(chan struct{})}
+		stopped: make(chan struct{}), changed: make(chan struct{}), holds: map[string]Hold{}}
 	if d.cfg, err = model.Load(d.configPath(), d.sealer); err != nil {
 		return nil, err
 	}
@@ -69,7 +72,7 @@ func Open(dir string, logs *engine.Logs) (*Daemon, error) {
 		return nil, err
 	}
 	_, err = d.engine.Apply(d.cfg)
-	if err != nil && d.cfg.SystemRouting() {
+	if err != nil && d.cfg.SystemRouting(false) {
 		// Keep the browser and exec routes working without system mode,
 		// and say why; a persistent kill switch still blocks the rest.
 		d.modeErr = "system mode is off: " + err.Error()
@@ -90,6 +93,11 @@ func Open(dir string, logs *engine.Logs) (*Daemon, error) {
 // Close stops the engine. An "on" kill switch lifts with it; a persistent
 // one keeps blocking until Moley is back.
 func (d *Daemon) Close() error {
+	d.mu.Lock()
+	if d.holdTimer != nil {
+		d.holdTimer.Stop()
+	}
+	d.mu.Unlock()
 	platform.ReleaseKillSwitch()
 	return d.engine.Close()
 }

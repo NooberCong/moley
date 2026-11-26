@@ -224,7 +224,8 @@ objects with a 4-byte little-endian length prefix, over `\\.\pipe\moley` or
 |---|---|
 | State | `status`, `events.subscribe` (pushes state, health and conns while subscribed) |
 | Profiles | `profiles.import` (file, text, link or subscription URL), `profiles.list`, `profiles.update {id, name?, auto_rule?}`, `profiles.remove`, `profiles.test` |
-| Routing | `exits.put/remove/select`, `rules.list/put/remove/reorder`, `quick.set {host, exit\|null}` |
+| Routing | `exits.put/remove/select`, `rules.list/put/remove/reorder`, `quick.set {host, exit\|null}`, `default.set` |
+| Holds | `holds.put {name, ttl_ms}`, `holds.release {name}`; the holds in force are in `status` |
 | Mode | `mode.set {browser, tun, kill_switch}` |
 | Config | `config.export`, `config.apply {doc, dry_run}` → diff, `history.list` (audit log) |
 | Diagnose | `probe {url, exit?}` → rule, exit, exit IP, resolver, latency; `logs {since, level}` |
@@ -279,8 +280,8 @@ traffic of command-line programs.
 
 - **Agent-friendly verbs.** These answer "did it work?" directly, so agents don't have to
   parse status or retry on their own.
-  - `moley probe <url> [--exit X] [--expect-exit X]` makes a real request through the
-    engine. It reports the matched rule, the exit used, the exit IP and country, which
+  - `moley probe <url|tcp://host:port> [--exit X] [--expect-exit X]` makes a real request
+    through the engine (a TCP probe connects and sends nothing, for databases and SSH). It reports the matched rule, the exit used, the exit IP and country, which
     resolver answered, and latency. With `--expect-exit` it fails with code 4 on a
     mismatch, which makes it the routing assertion for tests. Because it goes through the
     real engine and connection tracker, it is never a prediction.
@@ -323,7 +324,13 @@ of three mechanisms:
 3. **Shell session:** `moley env --exit jp` prints the same variables in shell syntax
    (`--shell pwsh|bash|cmd`), so you can set them for a whole terminal session.
 
-Tools that ignore proxy env vars need system mode (1).
+Tools that ignore proxy env vars need system mode (1). Since the adapter is only up while
+you're connected (§18, system mode), an agent that needs a work network while you're disconnected takes a
+**hold** instead of connecting: `moley holds put <name> --for 30m` keeps the adapter up
+without changing the default exit. Holds are runtime state in the daemon (never in
+`moley.json`), each lapses on its own (at most 24 h) so a crashed client can't leave the
+adapter up, and they are named, so agents holding at once never undo each other. Every
+put, release and lapse is in the audit log.
 
 ## 8. Browser extension
 
@@ -556,7 +563,10 @@ Where the code settled details the design left open, or changed them:
   `strict_route`), a sniff and a `hijack-dns` rule first, and FakeIP for A/AAAA except
   local names and names routed direct (198.18.0.0/15 and 2001:2::/48, both public space so
   the LAN rule never claims a placeholder). `find_process` is on when a rule names
-  programs. A per-user daemon refuses system mode with `needs_service`.
+  programs. A per-user daemon refuses system mode with `needs_service`. The inbound (so
+  the adapter) is only there while it's needed: you're connected (the default exit isn't
+  `direct`), a kill switch is on, or a client holds it (§7.2); `status` reports it as
+  `mode.system_routing`.
 - **LAN rule.** Private destinations go direct unless an earlier rule claims them
   (`lan`, just before the default). It holds in proxy-only mode too.
 - **Kill switch.** Windows: wireguard-windows' WFP filters (vendored in

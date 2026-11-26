@@ -63,6 +63,8 @@ func init() {
 		"rules.move":       def("Move a rule to a new index.", moveRule),
 		"quick.set":        def("Route a host (and its subdomains) via an exit; empty exit clears (no rebuild).", setQuick),
 		"default.set":      def("Set the exit for traffic no rule matches.", setDefault),
+		"holds.put":        def("Keep the network adapter up for a while (system mode), without changing where anything goes. Putting a name again renews it; each hold lapses on its own.", putHold),
+		"holds.release":    def("Release a hold by name; releasing one that's gone is not an error.", releaseHold),
 		"config.export":    def("The whole config; secrets redacted unless reveal.", exportConfig),
 		"config.apply":     def("Replace the whole config; dry_run returns the diff only.", applyConfig),
 		"history.list":     def("The audit log: who changed what.", listHistory),
@@ -101,6 +103,7 @@ type StatusResult struct {
 	Rules       int           `json:"rules"`
 	QuickPicks  int           `json:"quick_picks"`
 	Mode        ModeInfo      `json:"mode"`
+	Holds       []Hold        `json:"holds"`
 }
 
 type ModeInfo struct {
@@ -108,19 +111,25 @@ type ModeInfo struct {
 	KillSwitch string `json:"kill_switch"`
 	// Service: this daemon is the privileged service and can run system
 	// mode; a per-user daemon routes the browser and exec only.
-	Service bool   `json:"service"`
-	Error   string `json:"error,omitempty"`
+	Service bool `json:"service"`
+	// SystemRouting: the adapter is up now, so every program follows the
+	// rules, not just the browser and `moley exec`. System mode brings it up
+	// while you're connected, a kill switch is on, or a client holds it.
+	SystemRouting bool   `json:"system_routing"`
+	Error         string `json:"error,omitempty"`
 }
 
 func status(_ context.Context, d *Daemon, _ platform.Caller, _ none) (any, error) {
 	d.mu.Lock()
-	cfg, modeErr := d.cfg.Clone(), d.modeErr
+	cfg, modeErr, holds := d.cfg.Clone(), d.modeErr, d.activeHolds()
 	d.mu.Unlock()
 	return StatusResult{
 		Version: Version, Running: d.engine.Running(), ProxyPort: cfg.Settings.Port(),
 		DefaultExit: or(cfg.DefaultExit, model.ExitDirect), Profiles: d.profileInfos(cfg),
 		Exits: cfg.ExitIDs(), Rules: len(cfg.Rules), QuickPicks: len(cfg.Quick),
-		Mode: ModeInfo{TUN: cfg.Mode.TUN, KillSwitch: cfg.Mode.Kill(), Service: platform.System(), Error: modeErr},
+		Mode: ModeInfo{TUN: cfg.Mode.TUN, KillSwitch: cfg.Mode.Kill(), Service: platform.System(),
+			SystemRouting: cfg.SystemRouting(len(holds) > 0), Error: modeErr},
+		Holds: holds,
 	}, nil
 }
 

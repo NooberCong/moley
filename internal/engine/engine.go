@@ -31,8 +31,8 @@ import (
 type Engine struct {
 	env    compile.Env
 	logs   *Logs
-	recent history // closed connections, across rebuilds
-	usage  usage   // bytes per exit of closed connections
+	recent history    // closed connections, across rebuilds
+	usage  usage      // bytes per exit of closed connections
 	learn  sync.Mutex // the auto rules' learned files: read, changed, written
 
 	mu     sync.Mutex
@@ -76,6 +76,32 @@ type ApplyResult struct {
 func (e *Engine) Apply(cfg model.Config) (ApplyResult, error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	return e.apply(cfg)
+}
+
+// SetHeld keeps the network adapter up while held, whatever the config says
+// (see model.Config.SystemRouting), and re-applies the running config. It
+// rebuilds only when that changes the adapter, which a kill switch never
+// does: it keeps the adapter up either way.
+func (e *Engine) SetHeld(held bool) (ApplyResult, error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.env.Held == held {
+		return ApplyResult{}, nil
+	}
+	e.env.Held = held
+	if e.out == nil {
+		return ApplyResult{}, nil // nothing applied yet; the first Apply uses it
+	}
+	res, err := e.apply(e.cfg)
+	if err != nil {
+		e.env.Held = !held
+	}
+	return res, err
+}
+
+// apply is Apply with e.mu held.
+func (e *Engine) apply(cfg model.Config) (ApplyResult, error) {
 	if e.closed {
 		return ApplyResult{}, errors.New("engine closed")
 	}

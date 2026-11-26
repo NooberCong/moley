@@ -79,6 +79,36 @@ func TestCLI(t *testing.T) {
 		run(t, "import", stack.SSLink, "--id", "ss", "--json").code(t, cli.ExitUsage)
 	})
 
+	t.Run("profiles update", func(t *testing.T) {
+		name := func(id string) any {
+			for _, p := range run(t, "profiles", "--json").json(t)["profiles"].([]any) {
+				if p := p.(map[string]any); p["id"] == id {
+					return p["name"]
+				}
+			}
+			t.Fatalf("no profile %q", id)
+			return nil
+		}
+		run(t, "profiles", "update", "ss", "--name", "Tokyo").code(t, cli.ExitOK)
+		if got := name("ss"); got != "Tokyo" {
+			t.Fatalf("name after rename: %v", got)
+		}
+		// An empty --name clears it; leaving --name out keeps it.
+		run(t, "profiles", "update", "ss", "--name", "").code(t, cli.ExitOK)
+		if got := name("ss"); got != nil {
+			t.Fatalf("name after clearing: %v", got)
+		}
+		run(t, "profiles", "update", "sq1", "--auto-rule", "off").code(t, cli.ExitOK)
+		run(t, "profiles", "update", "sq1", "--auto-rule", "on", "--json").code(t, cli.ExitOK)
+		// Auto rules are OpenVPN only; nothing to change and bad values are usage errors.
+		if r := run(t, "profiles", "update", "wg", "--auto-rule", "on", "--json"); r.exit == cli.ExitOK {
+			t.Fatal("auto rule on a WireGuard profile was accepted")
+		}
+		run(t, "profiles", "update", "ss", "--json").code(t, cli.ExitUsage)
+		run(t, "profiles", "update", "ss", "--auto-rule", "maybe").code(t, cli.ExitUsage)
+		run(t, "profiles", "update", "nope", "--name", "x", "--json").code(t, cli.ExitError)
+	})
+
 	t.Run("wait and probe", func(t *testing.T) {
 		run(t, "wait", "--connected", "sq1", "--timeout", "20s", "--json").code(t, cli.ExitOK)
 		echoPort := strings.Split(stack.EchoAddr, ":")[1]
@@ -92,6 +122,40 @@ func TestCLI(t *testing.T) {
 		// A mismatch is exit 4.
 		run(t, "probe", stack.TraceURL(), "--expect-exit", "sq1", "--json").code(t, cli.ExitCheckFailed)
 		run(t, "wait", "--healthy", "wg", "--timeout", "10s").code(t, cli.ExitOK)
+		// TCP: a database port behind the work VPN, connected and nothing sent.
+		r = run(t, "probe", "tcp://"+teststack.IntranetHost+":"+echoPort, "--expect-exit", "sq1")
+		r.code(t, cli.ExitOK)
+		if !strings.Contains(r.stdout, "connected") {
+			t.Fatalf("tcp probe text: %s", r.stdout)
+		}
+		run(t, "probe", "tcp://"+teststack.IntranetHost, "--json").code(t, cli.ExitUsage)
+	})
+
+	t.Run("holds", func(t *testing.T) {
+		run(t, "holds").code(t, cli.ExitOK)
+		r := run(t, "holds", "put", "agent-1", "--for", "10m", "--json")
+		r.code(t, cli.ExitOK)
+		hold := r.json(t)["hold"].(map[string]any)
+		if hold["name"] != "agent-1" || r.json(t)["system_routing"] != false {
+			t.Fatalf("holds put: %s", r.stdout)
+		}
+		// Without system mode the text says the hold changes nothing yet.
+		if r := run(t, "holds", "put", "agent-1"); !strings.Contains(r.stdout, "system mode is off") {
+			t.Fatalf("holds put text: %s", r.stdout)
+		}
+		if held := run(t, "holds", "--json").json(t)["holds"].([]any); len(held) != 1 {
+			t.Fatalf("holds: %v", held)
+		}
+		if st := run(t, "status").stdout; !strings.Contains(st, "held by agent-1") {
+			t.Fatalf("status should show the hold: %s", st)
+		}
+		run(t, "holds", "put", "agent-1", "--for", "25h").code(t, cli.ExitUsage)
+		if out := run(t, "holds", "release", "agent-1", "--json").json(t); out["removed"] != true {
+			t.Fatalf("release: %v", out)
+		}
+		if r := run(t, "holds", "release", "agent-1"); r.exit != cli.ExitOK || !strings.Contains(r.stdout, "no hold named agent-1") {
+			t.Fatalf("second release: %d %s", r.exit, r.stdout)
+		}
 	})
 
 	t.Run("rules show auto", func(t *testing.T) {

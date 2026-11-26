@@ -3,6 +3,7 @@ package cli
 import (
 	"bufio"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -24,6 +25,7 @@ func init() {
 		{"import", "<file|link|-> [--id ID] [--replace] [--no-auto-rule] [--key-password-stdin]", "Import profiles: .conf (WireGuard/AmneziaWG), .ovpn, share links or a subscription body. - reads stdin. --key-password-stdin reads an encrypted key's password from stdin.", "moley import work.ovpn --id sq1", cmdImport},
 		{"profiles", "", "List profiles.", "moley profiles", cmdProfiles},
 		{"profiles remove", "<id> --yes", "Remove a profile.", "moley profiles remove jp --yes", cmdProfilesRemove},
+		{"profiles update", "<id> [--name N] [--auto-rule on|off]", "Rename a profile (--name \"\" clears it) or turn its auto rule on or off (OpenVPN).", "moley profiles update sq1 --name Office", cmdProfilesUpdate},
 		{"test", "<exit>", "Latency, exit IP and country through an exit.", "moley test sq1", cmdTest},
 		{"exits", "", "List exits: direct, block, every profile, and groups.", "moley exits", cmdExits},
 		{"exits put", "<id> --group manual|fastest --members a,b [--selected a]", "Create or replace a group exit.", "moley exits put asia --group fastest --members jp,hk", cmdExitsPut},
@@ -38,7 +40,10 @@ func init() {
 		{"rules move", "<id> <index>", "Move a rule (0 = first).", "moley rules move stream 0", cmdRulesMove},
 		{"quick", "<host> <exit|none>", "Route a site and its subdomains via an exit (the extension's one-click pick). No reconnects.", "moley quick crunchyroll.com jp", cmdQuick},
 		{"default", "<exit>", "Exit for traffic no rule matches.", "moley default direct", cmdDefault},
-		{"probe", "<url> [--exit X] [--expect-exit X] [--expect-rule R]", "Make a real request through the engine; report the rule, exit and resolver it used. Exit 4 if an expectation fails.", "moley probe https://wiki.corp.example --expect-exit sq1", cmdProbe},
+		{"holds", "", "Who keeps the network adapter up, and until when.", "moley holds", cmdHolds},
+		{"holds put", "<name> [--for 30m]", "Keep the network adapter up (system mode) for a while without changing where anything goes, so every program follows the rules while you're disconnected. Putting a name again renews it; it lapses on its own (at most 24h).", "moley holds put my-agent --for 1h", cmdHoldsPut},
+		{"holds release", "<name>", "Release a hold. Releasing one that's gone is not an error.", "moley holds release my-agent", cmdHoldsRelease},
+		{"probe", "<url|tcp://host:port> [--exit X] [--expect-exit X] [--expect-rule R]", "Make a real request (HTTP GET, or a TCP connect that sends nothing) through the engine; report the rule, exit and resolver it used. Exit 4 if an expectation fails.", "moley probe tcp://db.corp.example:5432 --expect-exit sq1", cmdProbe},
 		{"wait", "--connected <profile> | --healthy <exit> [--timeout 30s]", "Block until the condition holds. Exit 4 on timeout.", "moley wait --connected sq1 --timeout 20s", cmdWait},
 		{"apply", "-f <file|-> [--dry-run] [--yes]", "Replace the whole config (declarative). Prints the diff; removals need --yes.", "moley apply -f moley.json --dry-run", cmdApply},
 		{"export", "[--reveal]", "Print the whole config. Secrets are redacted unless --reveal; apply keeps redacted ones as they are.", "moley export > moley.json", cmdExport},
@@ -75,14 +80,20 @@ func cmdStatus(c *call) error {
 		fmt.Fprintf(w, "moley %s · proxy 127.0.0.1:%d · default exit %s · %d rules, %d quick picks\n",
 			st.Version, st.ProxyPort, st.DefaultExit, st.Rules, st.QuickPicks)
 		fmt.Fprintln(w, describeMode(st.Mode))
+		for _, h := range st.Holds {
+			fmt.Fprintln(w, describeHold(h))
+		}
 		printProfiles(w, st.Profiles)
 	})
 }
 
 func describeMode(m daemon.ModeInfo) string {
 	s := "browser and exec only"
-	if m.TUN {
+	switch {
+	case m.TUN && m.SystemRouting:
 		s = "system mode: every app"
+	case m.TUN:
+		s = "system mode: every app while connected or held; browser and exec only now"
 	}
 	if m.KillSwitch != model.KillSwitchOff {
 		s += ", kill switch " + m.KillSwitch
@@ -94,6 +105,63 @@ func describeMode(m daemon.ModeInfo) string {
 		s += "\n" + m.Error
 	}
 	return s
+}
+
+func describeHold(h daemon.Hold) string {
+	return fmt.Sprintf("held by %s until %s (%s left; %s)", h.Name, h.Until.Local().Format("15:04:05"),
+		time.Until(h.Until).Round(time.Second), h.Caller)
+}
+
+func cmdHolds(c *call) error {
+	if err := c.parse(0, 0); err != nil {
+		return err
+	}
+	var st daemon.StatusResult
+	if err := c.rpc("status", nil, &st); err != nil {
+		return err
+	}
+	return c.emit(map[string]any{"holds": st.Holds, "system_routing": st.Mode.SystemRouting}, func(w io.Writer) {
+		if len(st.Holds) == 0 {
+			fmt.Fprintln(w, "no holds")
+		}
+		for _, h := range st.Holds {
+			fmt.Fprintln(w, describeHold(h))
+		}
+	})
+}
+
+func cmdHoldsPut(c *call) error {
+	ttl := c.flags.Duration("for", daemon.DefaultHoldTTL, "how long, at most 24h")
+	if err := c.parse(1, 1); err != nil {
+		return err
+	}
+	var res daemon.HoldResult
+	if err := c.rpc("holds.put", daemon.HoldParams{Name: c.args[0], TTLMS: ttl.Milliseconds()}, &res); err != nil {
+		return err
+	}
+	return c.emit(res, func(w io.Writer) {
+		fmt.Fprintln(w, describeHold(*res.Hold))
+		if !res.SystemRouting {
+			fmt.Fprintln(w, "system mode is off, so the hold changes nothing until `moley mode --tun on`")
+		}
+	})
+}
+
+func cmdHoldsRelease(c *call) error {
+	if err := c.parse(1, 1); err != nil {
+		return err
+	}
+	var res daemon.HoldResult
+	if err := c.rpc("holds.release", daemon.ReleaseParams{Name: c.args[0]}, &res); err != nil {
+		return err
+	}
+	return c.emit(res, func(w io.Writer) {
+		if res.Removed {
+			fmt.Fprintln(w, "released", c.args[0])
+		} else {
+			fmt.Fprintln(w, "no hold named", c.args[0])
+		}
+	})
 }
 
 func printProfiles(w io.Writer, ps []daemon.ProfileInfo) {
@@ -185,6 +253,37 @@ func cmdProfiles(c *call) error {
 func cmdProfilesRemove(c *call) error { return c.remove("profiles.remove") }
 func cmdExitsRemove(c *call) error    { return c.remove("exits.remove") }
 func cmdRulesRemove(c *call) error    { return c.remove("rules.remove") }
+
+func cmdProfilesUpdate(c *call) error {
+	name := c.flags.String("name", "", "display name; empty clears it")
+	auto := c.flags.String("auto-rule", "", "on or off")
+	if err := c.parse(1, 1); err != nil {
+		return err
+	}
+	p := daemon.UpdateProfileParams{ID: c.args[0]}
+	// --name "" clears the name, so whether it was given matters, not its value.
+	c.flags.Visit(func(f *flag.Flag) {
+		if f.Name == "name" {
+			p.Name = name
+		}
+	})
+	switch *auto {
+	case "":
+	case "on", "off":
+		on := *auto == "on"
+		p.AutoRule = &on
+	default:
+		return usageErr("--auto-rule takes on or off")
+	}
+	if p.Name == nil && p.AutoRule == nil {
+		return usageErr("nothing to change: give --name or --auto-rule (see `moley help profiles update`)")
+	}
+	var res map[string]any
+	if err := c.rpc("profiles.update", p, &res); err != nil {
+		return err
+	}
+	return c.emit(res, func(w io.Writer) { fmt.Fprintln(w, res["summary"]) })
+}
 
 func (c *call) remove(method string) error {
 	yes := c.flags.Bool("yes", false, "confirm")
@@ -468,9 +567,12 @@ func cmdProbe(c *call) error {
 		return err
 	}
 	if err := c.emit(r, func(w io.Writer) {
-		outcome := fmt.Sprintf("HTTP %d", r.Status)
-		if r.Error != "" {
+		outcome := "connected" // a TCP probe
+		switch {
+		case r.Error != "":
 			outcome = "failed: " + r.Error
+		case r.Status != 0:
+			outcome = fmt.Sprintf("HTTP %d", r.Status)
 		}
 		fmt.Fprintf(w, "%s\n  rule %s → exit %s (%s) · resolver %s · %d ms · %s\n",
 			r.URL, or(r.Rule, "?"), or(r.Exit, "?"), strings.Join(r.Chain, " → "), or(r.Resolver, "?"), r.MS, outcome)

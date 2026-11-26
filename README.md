@@ -104,7 +104,8 @@ flowchart LR
 ### Two ways to route
 
 - **Browser only** (default, no admin rights). The extension sends the browser through Moley; everything else on your computer is untouched.
-- **All apps.** While you're connected, every app on the computer follows your rules, matched by name, so even apps that look up their own addresses route correctly. Disconnected, Moley's network adapter goes away and only the browser is routed, unless the kill switch is on. Turn it on in **Settings**.
+- **All apps.** While you're connected, every app on the computer follows your rules, matched by name, so even apps that look up their own addresses route correctly. Disconnected, Moley's network adapter goes away and only the browser is routed, unless the kill switch is on or something holds it up. Turn it on in **Settings**.
+  - **Holds.** A script or AI agent that needs a work network from a program like `psql` or `ssh` can hold the adapter up for a while (`moley holds put <name> --for 30m`) without connecting, so where everything else goes doesn't change. Each hold lapses on its own, and holds from different agents never undo each other. The tray names whoever holds it and can release a hold, and **All apps** on Home reads *Held on*.
 
 ### Kill switch
 
@@ -141,12 +142,15 @@ moley quick crunchyroll.com tokyo             # one site, instantly
 moley default tokyo                           # everything else
 
 moley probe https://wiki.corp.example         # which rule, route and DNS a request really uses
+moley probe tcp://db.corp.example:5432        # the same for a database or SSH port
+moley holds put my-agent --for 30m            # every app follows the rules for a while, default untouched
 moley exec --exit tokyo -- curl -s https://ifconfig.co
 moley conns --host netflix.com                # live connections and where they went
 
 moley mode --tun on --kill-switch on          # every app, nothing leaks
 moley events --json                           # status and traffic as they change (NDJSON)
 moley history                                 # who changed what, and when
+moley profiles update office --name Office    # rename; --auto-rule on|off
 ```
 
 Built for automation:

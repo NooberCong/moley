@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
@@ -14,12 +15,25 @@ type status struct {
 	DefaultExit string `json:"default_exit"`
 	Exits       []string
 	Profiles    []profileStatus `json:"profiles"`
-	Mode struct {
+	Mode        struct {
 		TUN        bool   `json:"tun"`
 		KillSwitch string `json:"kill_switch"`
 		Service    bool   `json:"service"`
 		Error      string `json:"error"`
 	} `json:"mode"`
+	// Holds keep the adapter up for a while (an agent reaching a work
+	// network, say) without changing where anything goes.
+	Holds []hold `json:"holds"`
+}
+
+type hold struct {
+	Name  string    `json:"name"`
+	Until time.Time `json:"until"`
+}
+
+// label is how the menu offers to release a hold.
+func (h hold) label() string {
+	return fmt.Sprintf("Release %s (until %s)", h.Name, h.Until.Local().Format("15:04"))
 }
 
 // trayState is everything the tray shows; the tray is redrawn only when
@@ -41,7 +55,7 @@ func (u *ui) refreshTray() {
 	next := trayState{mark: markOff, tooltip: "Moley isn't running"}
 	if !offline {
 		next.mark, next.tooltip = describe(st)
-		key, _ := json.Marshal([]any{st.DefaultExit, st.Exits, st.Mode})
+		key, _ := json.Marshal([]any{st.DefaultExit, st.Exits, st.Mode, st.Holds})
 		next.menu = string(key)
 	}
 	u.mu.Lock()
@@ -62,8 +76,12 @@ func (u *ui) refreshTray() {
 // describe picks the tray's mark and words: a problem first, then whether
 // you're connected. Only the connection you chose counts: rules and work
 // networks route through VPNs while disconnected too, and that isn't "on".
+// Nor is a hold, which changes no route; the tooltip names who holds.
 func describe(st status) (mark, string) {
 	tip := "Moley · Disconnected"
+	if names := st.holders(); names != "" {
+		tip += " · All apps held by " + names
+	}
 	switch st.DefaultExit {
 	case "", "direct":
 	case "block":
@@ -95,6 +113,19 @@ type profileStatus struct {
 	Name  string `json:"name"`
 	State string `json:"state"`
 	Error string `json:"error"`
+}
+
+// holders names who holds the adapter up. Without system mode a hold keeps
+// nothing up, so there is no one to name.
+func (st status) holders() string {
+	if !st.Mode.TUN || len(st.Holds) == 0 {
+		return ""
+	}
+	names := make([]string, len(st.Holds))
+	for i, h := range st.Holds {
+		names[i] = h.Name
+	}
+	return strings.Join(names, ", ")
 }
 
 // name is how an exit is shown: a profile's display name if it has one.
@@ -150,6 +181,14 @@ func (u *ui) menu(offline bool, st status) *application.Menu {
 			sub.AddRadio(st.name(id), id == st.DefaultExit).OnClick(func(*application.Context) {
 				u.do("default.set", map[string]any{"exit": id})
 			})
+		}
+		if len(st.Holds) > 0 {
+			holds := m.AddSubmenu("Holds")
+			for _, h := range st.Holds {
+				holds.Add(h.label()).OnClick(func(*application.Context) {
+					u.do("holds.release", map[string]any{"name": h.Name})
+				})
+			}
 		}
 	}
 	m.AddSeparator()

@@ -20,6 +20,7 @@ import (
 
 	"github.com/sagernet/sing-box/adapter"
 	"github.com/sagernet/sing-box/common/trafficcontrol"
+	"golang.org/x/net/proxy"
 
 	"moley/internal/compile"
 	"moley/internal/model"
@@ -180,9 +181,11 @@ type ProbeResult struct {
 	body     []byte
 }
 
-// Probe makes a real HTTP(S) request through the local proxy inbound, then
-// reads the connection tracker to report which rule and exit it used. With
-// exit set it goes through the hint inbound and forces that exit.
+// Probe makes a real request through the local proxy inbound, then reads
+// the connection tracker to report which rule and exit it used. target is
+// an http(s) URL (an HTTP GET) or tcp://host:port (a TCP connect, nothing
+// sent: for databases, SSH and the like). With exit set it goes through the
+// hint inbound and forces that exit.
 func (e *Engine) Probe(ctx context.Context, target, exit string) (ProbeResult, error) {
 	inst, out, cfg := e.current()
 	if inst == nil {
@@ -192,41 +195,38 @@ func (e *Engine) Probe(ctx context.Context, target, exit string) (ProbeResult, e
 		return ProbeResult{}, fmt.Errorf("unknown exit %q", exit)
 	}
 	u, err := url.Parse(target)
-	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-		return ProbeResult{}, fmt.Errorf("probe needs an http(s) URL, got %q", target)
+	web := err == nil && (u.Scheme == "http" || u.Scheme == "https") && u.Host != ""
+	tcp := err == nil && u.Scheme == "tcp" && u.Hostname() != "" && u.Port() != "" && (u.Path == "" || u.Path == "/")
+	if !web && !tcp {
+		return ProbeResult{}, fmt.Errorf("probe needs an http(s) URL or tcp://host:port, got %q", target)
 	}
-	port := int(cfg.Settings.Port())
 	// SOCKS5, like the browser path: the hostname goes to the engine
 	// unresolved, and a failed exit is a connect error, not a 502 page.
-	proxy := &url.URL{Scheme: "socks5", Host: "127.0.0.1:" + strconv.Itoa(port)}
+	port := int(cfg.Settings.Port())
+	proxyAddr, auth := "127.0.0.1:"+strconv.Itoa(port), (*proxy.Auth)(nil)
 	if exit != "" {
-		proxy.Host = "127.0.0.1:" + strconv.Itoa(port+1)
-		proxy.User = url.UserPassword(compile.HintUser(exit), e.env.Secret)
+		proxyAddr = "127.0.0.1:" + strconv.Itoa(port+1)
+		auth = &proxy.Auth{User: compile.HintUser(exit), Password: e.env.Secret}
 	}
+	// The tracker knows the connection by the port it came from.
 	localPort := make(chan uint16, 1)
-	tr := &http.Transport{
-		Proxy:             http.ProxyURL(proxy),
-		DisableKeepAlives: true,
-		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-			c, err := (&net.Dialer{}).DialContext(ctx, network, addr)
-			if err == nil {
-				localPort <- uint16(c.LocalAddr().(*net.TCPAddr).Port)
-			}
-			return c, err
-		},
+	socks, err := proxy.SOCKS5("tcp", proxyAddr, auth, sourceDialer{localPort})
+	if err != nil {
+		return ProbeResult{}, err
 	}
-	defer tr.CloseIdleConnections()
+	dial := socks.(proxy.ContextDialer).DialContext
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
-	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
-	req.Header.Set("User-Agent", "moley-probe")
+
 	res := ProbeResult{URL: target}
 	start := time.Now()
-	resp, err := (&http.Client{Transport: tr, CheckRedirect: noRedirect}).Do(req)
-	if err == nil {
-		res.body, err = io.ReadAll(io.LimitReader(resp.Body, 64<<10))
-		resp.Body.Close()
-		res.Status = resp.StatusCode
+	if web {
+		res.Status, res.body, err = get(ctx, dial, target)
+	} else {
+		var c net.Conn
+		if c, err = dial(ctx, "tcp", u.Host); err == nil {
+			c.Close()
+		}
 	}
 	res.MS = time.Since(start).Milliseconds()
 	if err != nil {
@@ -244,6 +244,42 @@ func (e *Engine) Probe(ctx context.Context, target, exit string) (ProbeResult, e
 	default:
 	}
 	return res, nil
+}
+
+// get fetches target over dial: one request, no redirects, the start of the body.
+func get(ctx context.Context, dial func(context.Context, string, string) (net.Conn, error), target string) (int, []byte, error) {
+	tr := &http.Transport{DialContext: dial, DisableKeepAlives: true}
+	defer tr.CloseIdleConnections()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
+	if err != nil {
+		return 0, nil, err
+	}
+	req.Header.Set("User-Agent", "moley-probe")
+	resp, err := (&http.Client{Transport: tr, CheckRedirect: noRedirect}).Do(req)
+	if err != nil {
+		return 0, nil, err
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
+	return resp.StatusCode, body, err
+}
+
+// sourceDialer dials the proxy and reports the local port it dialed from.
+type sourceDialer struct{ port chan<- uint16 }
+
+func (s sourceDialer) Dial(network, addr string) (net.Conn, error) {
+	return s.DialContext(context.Background(), network, addr)
+}
+
+func (s sourceDialer) DialContext(ctx context.Context, network, addr string) (net.Conn, error) {
+	c, err := (&net.Dialer{}).DialContext(ctx, network, addr)
+	if err == nil {
+		select {
+		case s.port <- uint16(c.LocalAddr().(*net.TCPAddr).Port):
+		default:
+		}
+	}
+	return c, err
 }
 
 func noRedirect(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }

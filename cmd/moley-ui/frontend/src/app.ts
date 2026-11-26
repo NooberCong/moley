@@ -10,6 +10,9 @@ type Status = {
   profiles: { id: string; kind: string; auto_rule?: boolean; state: string; error?: string }[];
   exits: string[];
   mode: Mode;
+  // Holds keep "All apps" routing up for a while (an agent reaching a work
+  // network, say) without changing where anything goes.
+  holds?: { name: string; until: string }[];
 };
 type Rate = { up: number; down: number };
 type Traffic = Rate & { exits: Record<string, Rate>; open: number };
@@ -522,13 +525,19 @@ function renderHome(): void {
   held(every, "mode", changing === "tun");
   held(kill, "mode", changing.startsWith("kill:"));
   const service = !!st?.mode.service;
+  // Disconnected, "All apps" is down unless something holds it up.
+  const holds = st?.mode.tun && (st.default_exit || "direct") === "direct" ? st.holds ?? [] : [];
   $("every-note").textContent = !st ? "" : !service ? "Setup needed"
-    : changing === "tun" ? (st.mode.tun ? "Turning off" : "Turning on") : st.mode.tun ? "On" : "Browser only";
+    : changing === "tun" ? (st.mode.tun ? "Turning off" : "Turning on")
+    : holds.length ? "Held on" : st.mode.tun ? "On" : "Browser only";
   $("kill-note").textContent = !st ? "" : !service ? "Setup needed"
     : changing.startsWith("kill:") ? (changing === "kill:off" ? "Turning off" : "Turning on")
     : { off: "Off", on: "On", persistent: "Always on" }[ks];
   const setup = "Needs the Moley service. Click to set it up.";
-  tip(every, service ? "While you're connected, route every app on this PC through Moley, not just your browser." : setup);
+  const holders = holds.map((h) => `${h.name} until ${new Date(h.until).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`);
+  tip(every, !service ? setup : holders.length
+    ? `Every app follows your rules now, held on by ${holders.join(", ")}. Each hold ends on its own; release one from the tray menu.`
+    : "While you're connected, route every app on this PC through Moley, not just your browser.");
   tip(kill, service ? "Block internet traffic that would bypass Moley." : setup);
 
   if (l.test && state.test?.exit !== l.title) void testExit(l.title);

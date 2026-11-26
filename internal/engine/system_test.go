@@ -3,6 +3,7 @@ package engine_test
 import (
 	"encoding/json"
 	"slices"
+	"strings"
 	"testing"
 
 	"moley/internal/compile"
@@ -81,6 +82,20 @@ func TestSystemMode(t *testing.T) {
 	}
 	if opts.Experimental.CacheFile["store_fakeip"] != true {
 		t.Errorf("cache_file: %v", opts.Experimental.CacheFile)
+	}
+
+	// Disconnected, the adapter is down; a hold brings it back without
+	// changing where anything goes.
+	off := cfg.Clone()
+	off.DefaultExit, off.Mode = model.ExitDirect, model.Mode{TUN: true}
+	for _, held := range []bool{false, true} {
+		out, err := compile.Compile(off, compile.Env{RulesDir: t.TempDir(), Held: held})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if up := strings.Contains(string(out.Options), `"type": "tun"`); up != held {
+			t.Errorf("disconnected, held %v: tun inbound %v", held, up)
+		}
 	}
 
 	// Validation: a kill switch needs the tunnel to let anything out.

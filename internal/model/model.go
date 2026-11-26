@@ -78,14 +78,17 @@ const (
 func (m Mode) Kill() string { return or(m.KillSwitch, KillSwitchOff) }
 
 // SystemRouting says whether the network adapter is up: system mode is on and
-// you're connected (everything else goes somewhere other than direct), or a
-// kill switch needs the adapter as the way out. Disconnected, it's down, and
-// rules and work networks route the browser and `moley exec` only.
-func (c Config) SystemRouting() bool {
+// you're connected (everything else goes somewhere other than direct), a
+// kill switch needs the adapter as the way out, or held is set: a client (an
+// agent reaching a work network, say) holds it up for a while without
+// changing where everything else goes. Otherwise it's down, and rules and
+// work networks route the browser and `moley exec` only. Holds live in the
+// daemon, never in the config.
+func (c Config) SystemRouting(held bool) bool {
 	if !c.Mode.TUN {
 		return false
 	}
-	return c.Mode.Kill() != KillSwitchOff || or(c.DefaultExit, ExitDirect) != ExitDirect
+	return held || c.Mode.Kill() != KillSwitchOff || or(c.DefaultExit, ExitDirect) != ExitDirect
 }
 
 type Settings struct {
@@ -176,7 +179,7 @@ func AutoRuleID(profileID string) string { return "auto-" + profileID }
 const nameMax = 64 // display names of profiles and rules
 
 var (
-	idRe      =regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,47}$`)
+	idRe      = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,47}$`)
 	ruleSetRe = regexp.MustCompile(`^geo(site|ip)-[a-z0-9!@._-]+$`)
 )
 

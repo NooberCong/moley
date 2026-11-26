@@ -134,6 +134,39 @@ func TestEngine(t *testing.T) {
 		}
 	})
 
+	t.Run("tcp probes", func(t *testing.T) {
+		// A database or SSH host: a connect, nothing sent, routed like the rest.
+		r, err := e.Probe(ctx, "tcp://"+teststack.IntranetHost+":"+port, "")
+		if err != nil || r.Error != "" || r.Rule != "auto-sq1" || r.Exit != "sq1" || r.Resolver != "pushed:sq1" || r.Status != 0 {
+			t.Fatalf("intranet over tcp: %+v %v", r, err)
+		}
+		if r, err := e.Probe(ctx, "tcp://"+teststack.PublicIP+":"+port, "wg"); err != nil || r.Error != "" || r.Exit != "wg" {
+			t.Fatalf("tcp via a forced exit: %+v %v", r, err)
+		}
+		// Nothing listening: the engine reports the failed connect, it
+		// doesn't answer for the far end.
+		closed := itoa(int(freePort(t)))
+		if r, err := e.Probe(ctx, "tcp://127.0.0.1:"+closed, ""); err != nil || r.Error == "" || r.Exit != "direct" {
+			t.Fatalf("tcp to a closed port must fail: %+v %v", r, err)
+		}
+		for _, bad := range []string{"tcp://" + teststack.IntranetHost, "tcp://:" + port, "tcp://x:1/path", "ftp://x/"} {
+			if _, err := e.Probe(ctx, bad, ""); err == nil {
+				t.Errorf("probe %q should be refused", bad)
+			}
+		}
+	})
+
+	t.Run("a hold leaves the config alone without system mode", func(t *testing.T) {
+		for _, held := range []bool{true, false} {
+			if res, err := e.SetHeld(held); err != nil || res.Rebuilt {
+				t.Fatalf("SetHeld(%v) without tun must change nothing: %+v %v", held, res, err)
+			}
+		}
+		if !e.Running() {
+			t.Fatal("engine must keep running")
+		}
+	})
+
 	t.Run("hot edits keep connections", func(t *testing.T) {
 		// Match fields are OR-ed: the process name doesn't narrow the IP match.
 		cfg.Rules = []model.Rule{{ID: "pub", Exit: "ss", Match: model.Match{
@@ -245,6 +278,10 @@ func TestEngine(t *testing.T) {
 		}
 		if r.Rule != "auto-sq1" || r.Exit != "sq1" || r.Error == "" {
 			t.Fatalf("intranet with tunnel down must fail via sq1, got %+v", r)
+		}
+		r, err = e.Probe(ctx, "tcp://"+teststack.IntranetHost+":"+port, "")
+		if err != nil || r.Rule != "auto-sq1" || r.Exit != "sq1" || r.Error == "" {
+			t.Fatalf("tcp to the intranet with tunnel down must fail via sq1, got %+v %v", r, err)
 		}
 	})
 
