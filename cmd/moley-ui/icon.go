@@ -8,33 +8,82 @@ import (
 	"math"
 )
 
-// mark is how the Moley mark looks in one state: a tunnel mouth built of
-// segments, like the window's power ring, on a dark tile. Lit, the arch
-// glows and there is light at the end of the tunnel; unlit, it sits dark.
+// mark is how the Moley mark looks in one state: a white shield shaped as
+// an M, glowing on a tile coloured for the state, over a dot map of the
+// world.
 type mark struct {
-	arch color.NRGBA
-	lit  bool
+	tone, deep color.NRGBA // the tile's top and bottom
+	lit        bool
 }
 
 var (
-	markTunnel     = mark{color.NRGBA{0x2e, 0xe6, 0xa8, 0xff}, true}  // protected: through a tunnel, or every app
-	markConnecting = mark{color.NRGBA{0xf3, 0xb6, 0x4e, 0xff}, true}  // the tunnel in use is connecting
-	markDown       = mark{color.NRGBA{0xff, 0x6a, 0x55, 0xff}, true}  // a tunnel or the mode has a problem
-	markDirect     = mark{color.NRGBA{0x6e, 0x7a, 0x76, 0xff}, false} // running, nothing tunneled
-	markOff        = mark{color.NRGBA{0x3a, 0x43, 0x40, 0xff}, false} // Moley isn't running
-
-	tileTop    = color.NRGBA{0x1d, 0x23, 0x21, 0xff}
-	tileBottom = color.NRGBA{0x07, 0x09, 0x08, 0xff}
+	markTunnel     = mark{color.NRGBA{0x2e, 0xe6, 0xa8, 0xff}, color.NRGBA{0x12, 0x9a, 0x72, 0xff}, true}  // protected: through a tunnel, or every app
+	markConnecting = mark{color.NRGBA{0xf3, 0xb6, 0x4e, 0xff}, color.NRGBA{0xb0, 0x72, 0x14, 0xff}, true}  // the tunnel in use is connecting
+	markDown       = mark{color.NRGBA{0xff, 0x6a, 0x55, 0xff}, color.NRGBA{0xb8, 0x30, 0x22, 0xff}, true}  // a tunnel or the mode has a problem
+	markDirect     = mark{color.NRGBA{0x8c, 0x98, 0x94, 0xff}, color.NRGBA{0x55, 0x60, 0x5c, 0xff}, false} // running, nothing tunneled
+	markOff        = mark{color.NRGBA{0x5e, 0x68, 0x65, 0xff}, color.NRGBA{0x33, 0x3a, 0x38, 0xff}, false} // Moley isn't running
 )
 
-// The mark on a 128 grid: a half ring of stones over two legs.
+// The shield on a 128 grid, clockwise from its top left peak: its top
+// dips in a V between two peaks, the M, and its sides curve to a point.
+var shield = func() [][2]float64 {
+	const l, r, top, vee, waist, tip = 30.0, 98.0, 24.0, 48.0, 60.0, 104.0
+	pts := [][2]float64{{l, top}, {(l + r) / 2, vee}, {r, top}}
+	// Each side is a curve from the waist to the tip, bending in late.
+	const n = 16
+	for i := range n + 1 {
+		t := float64(i) / n
+		pts = append(pts, side(r, waist, tip, t))
+	}
+	for i := n - 1; i >= 0; i-- {
+		p := side(r, waist, tip, float64(i)/n)
+		pts = append(pts, [2]float64{128 - p[0], p[1]})
+	}
+	return pts
+}()
+
+// side is a point t of the way down the shield's right side, a quadratic
+// curve from (x, waist) toward the tip under the centre.
+func side(x, waist, tip, t float64) [2]float64 {
+	cx, cy := x, waist+(tip-waist)*0.62 // the control point
+	u := 1 - t
+	return [2]float64{u*u*x + 2*u*t*cx + t*t*64, u*u*waist + 2*u*t*cy + t*t*tip}
+}
+
+const shieldRim = 5.0 // the inset rim's distance from the edge
+
+// world is a dot map of the world, a cell per character.
+var world = []string{
+	"..................................",
+	"......###.#####.........##........",
+	"..#############......#.##########.",
+	".###############....##############",
+	"..##############...###############",
+	"...###########.....##.############",
+	"....#########......###############",
+	".....#######.......##############.",
+	".....######.......#############...",
+	"......####........###.#########...",
+	".......###.......######.######....",
+	"........##......########..###.....",
+	".........##.....#########..#......",
+	"..........#.....##########........",
+	"...........###...########.........",
+	"...........#####..######......#...",
+	"...........######..#####.....##...",
+	"............#####...####..........",
+	".............####...###......###..",
+	".............###....##......#####.",
+	".............###...........######.",
+	".............##.............####..",
+	"............##..................#.",
+	"............#.....................",
+}
+
 const (
-	archX, archY = 64.0, 65.0 // the half ring's centre
-	archInner    = 22.0
-	archOuter    = 40.0
-	archFloor    = 103.0 // where the legs stand
-	stones       = 5     // in the half ring
-	stoneGap     = 5.5   // between stones, straight-sided
+	worldX, worldY = 5.0, 12.0 // the map's top left
+	worldCell      = 3.5
+	worldDot       = 2.5
 )
 
 // drawIcon renders the mark at size px. It is drawn from distance fields,
@@ -42,7 +91,8 @@ const (
 func drawIcon(size int, m mark) []byte {
 	img := image.NewNRGBA(image.Rect(0, 0, size, size))
 	s := float64(size) / 128
-	const ss = 4 // supersampling per axis
+	const ss = 4       // supersampling per axis
+	dots := size >= 48 // too fine to read smaller
 	for y := range size {
 		for x := range size {
 			var r, g, b, a float64 // premultiplied sums
@@ -50,10 +100,10 @@ func drawIcon(size int, m mark) []byte {
 				for sx := range ss {
 					px := (float64(x) + (float64(sx)+0.5)/ss) / s
 					py := (float64(y) + (float64(sy)+0.5)/ss) / s
-					if roundedRect(px, py, 4, 4, 124, 124, 30) > 0 {
+					if roundedRect(px, py, 4, 4, 124, 124, 28) > 0 {
 						continue
 					}
-					c := markAt(px, py, m)
+					c := markAt(px, py, m, dots)
 					r, g, b, a = r+c[0], g+c[1], b+c[2], a+1
 				}
 			}
@@ -69,51 +119,62 @@ func drawIcon(size int, m mark) []byte {
 }
 
 // markAt is the colour (0..1 RGB) of the mark at a point inside the tile.
-func markAt(x, y float64, m mark) [3]float64 {
-	tile := lerp(rgb(tileTop), rgb(tileBottom), y/128)
-	tone := rgb(m.arch)
-	if light, ok := stone(x, y); ok {
+func markAt(x, y float64, m mark, dots bool) [3]float64 {
+	tone, white := rgb(m.tone), [3]float64{1, 1, 1}
+	d := polygon(x, y, shield)
+	if d < 0 {
+		face := white
 		if !m.lit {
-			return tone
+			face = lerp(tone, white, 0.75)
 		}
-		return lerp(scale(tone, 0.7), tone, light) // lit from above
+		if x > 64 { // the right half in the shade
+			face = lerp(face, tone, 0.14)
+		}
+		if math.Abs(d+shieldRim) < 1.1 { // the inset rim
+			face = lerp(face, tone, 0.35)
+		}
+		return face
 	}
-	if !m.lit {
-		return tile
+	c := lerp(tone, rgb(m.deep), y/128) // the tile, lighter at the top
+	glow := 0.0
+	if m.lit {
+		glow = math.Exp(-d / 10)
 	}
-	// Light at the end of the tunnel, and a faint halo around the arch.
-	dx, dy := x-archX, y-archFloor
-	inside := math.Abs(dx) < archInner && (y > archY || math.Hypot(x-archX, y-archY) < archInner) && y <= archFloor
-	glow := 0.12 * math.Exp(-math.Pow((math.Hypot(x-archX, y-archY)-(archInner+archOuter)/2)/16, 2))
-	if inside {
-		glow = math.Max(glow, 0.95*math.Exp(-math.Pow(math.Hypot(dx*0.9, dy)/20, 2)))
+	if dots && onDot(x, y) {
+		c = lerp(c, white, 0.2+0.3*glow)
 	}
-	return lerp(tile, lerp(tone, [3]float64{1, 1, 1}, 0.2*glow), math.Min(glow, 1))
+	// The bolt lights the tile around it.
+	return lerp(c, lerp(tone, white, 0.45), 0.7*glow)
 }
 
-// stone reports whether a point is on one of the arch's stones, and how
-// much light falls on it (1 at the top).
-func stone(x, y float64) (float64, bool) {
-	dx, dy := x-archX, y-archY
-	if y > archY { // the legs
-		ok := math.Abs(dx) >= archInner && math.Abs(dx) <= archOuter && y <= archFloor && dy >= stoneGap/2
-		return 0.45, ok
+// onDot reports whether a point is on one of the world map's dots.
+func onDot(x, y float64) bool {
+	col, row := (x-worldX)/worldCell, (y-worldY)/worldCell
+	if col < 0 || row < 0 || int(row) >= len(world) || int(col) >= len(world[int(row)]) {
+		return false
 	}
-	r := math.Hypot(dx, dy)
-	if r < archInner || r > archOuter {
-		return 0, false
+	if world[int(row)][int(col)] != '#' {
+		return false
 	}
-	step := math.Pi / stones
-	a := math.Atan2(dx, -dy) + math.Pi/2 // 0 at the left foot, π at the right
-	off := math.Mod(a, step)
-	if r*math.Sin(math.Min(off, step-off)) < stoneGap/2 && a > step/2 && a < math.Pi-step/2 {
-		return 0, false
+	fx, fy := (col-math.Floor(col))*worldCell, (row-math.Floor(row))*worldCell
+	return fx < worldDot && fy < worldDot
+}
+
+// polygon is the signed distance to a closed polygon: negative inside.
+func polygon(x, y float64, v [][2]float64) float64 {
+	d := math.Inf(1)
+	sign := 1.0
+	for i, j := 0, len(v)-1; i < len(v); j, i = i, i+1 {
+		ex, ey := v[j][0]-v[i][0], v[j][1]-v[i][1]
+		wx, wy := x-v[i][0], y-v[i][1]
+		t := math.Min(math.Max((wx*ex+wy*ey)/(ex*ex+ey*ey), 0), 1)
+		d = math.Min(d, math.Hypot(wx-ex*t, wy-ey*t))
+		a, b, c := y >= v[i][1], y < v[j][1], ex*wy > ey*wx
+		if (a && b && c) || (!a && !b && !c) {
+			sign = -sign
+		}
 	}
-	if r*math.Sin(math.Min(a, math.Pi-a)) < stoneGap/2 { // the joint over each leg
-		return 0, false
-	}
-	mid := (math.Floor(a/step)+0.5)*step - math.Pi/2
-	return 0.35 + 0.65*(1+math.Cos(mid))/2, true
+	return sign * d
 }
 
 func rgb(c color.NRGBA) [3]float64 {
