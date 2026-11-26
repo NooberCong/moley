@@ -528,7 +528,7 @@ function renderHome(): void {
     : changing.startsWith("kill:") ? (changing === "kill:off" ? "Turning off" : "Turning on")
     : { off: "Off", on: "On", persistent: "Always on" }[ks];
   const setup = "Needs the Moley service. Click to set it up.";
-  tip(every, service ? "Route every app on this PC through Moley, not just your browser." : setup);
+  tip(every, service ? "While you're connected, route every app on this PC through Moley, not just your browser." : setup);
   tip(kill, service ? "Block internet traffic that would bypass Moley." : setup);
 
   if (l.test && state.test?.exit !== l.title) void testExit(l.title);
@@ -833,7 +833,7 @@ function settingsView(): Node[] {
   every.onclick = () => setTun(!state.status!.mode.tun);
   const install = held(h("button", { type: "button", class: "btn small primary", onclick: installService }, "Set up"), "service", true);
   const everyRow = setting("All apps", service
-    ? "Route every app on this PC through Moley, not just your browser."
+    ? "While you're connected, route every app on this PC through Moley, not just your browser."
     : "Routing all apps needs the Moley service. Set it up once; it asks for administrator rights.", service ? every : install);
 
   const kill = st.mode.kill_switch;

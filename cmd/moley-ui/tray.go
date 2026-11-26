@@ -22,10 +22,6 @@ type status struct {
 	} `json:"mode"`
 }
 
-type traffic struct {
-	Exits map[string]struct{ Up, Down int64 } `json:"exits"`
-}
-
 // trayState is everything the tray shows; the tray is redrawn only when
 // it changes.
 type trayState struct {
@@ -38,15 +34,13 @@ func (u *ui) refreshTray() {
 	u.mu.Lock()
 	offline := u.offline != "" || u.last["status"] == nil
 	var st status
-	var tr traffic
 	_ = json.Unmarshal(u.last["status"], &st)
-	_ = json.Unmarshal(u.last["traffic"], &tr)
 	u.mu.Unlock()
 	u.followVPN(st, offline)
 
 	next := trayState{mark: markOff, tooltip: "Moley isn't running"}
 	if !offline {
-		next.mark, next.tooltip = describe(st, tr)
+		next.mark, next.tooltip = describe(st)
 		key, _ := json.Marshal([]any{st.DefaultExit, st.Exits, st.Mode})
 		next.menu = string(key)
 	}
@@ -65,9 +59,10 @@ func (u *ui) refreshTray() {
 	}
 }
 
-// describe picks the tray's mark and words: a problem first, then
-// whether traffic is going through a tunnel.
-func describe(st status, tr traffic) (mark, string) {
+// describe picks the tray's mark and words: a problem first, then whether
+// you're connected. Only the connection you chose counts: rules and work
+// networks route through VPNs while disconnected too, and that isn't "on".
+func describe(st status) (mark, string) {
 	tip := "Moley · Disconnected"
 	switch st.DefaultExit {
 	case "", "direct":
@@ -84,19 +79,15 @@ func describe(st status, tr traffic) (mark, string) {
 			return markDown, fmt.Sprintf("Moley · Can't reach %s", st.name(p.ID))
 		}
 	}
-	tunneled := st.Mode.TUN || (st.DefaultExit != "direct" && st.DefaultExit != "")
-	for id := range tr.Exits {
-		tunneled = tunneled || (id != "direct" && id != "block")
-	}
 	for _, p := range st.Profiles {
 		if p.ID == st.DefaultExit && (p.State == "connecting" || p.State == "auth-pending") {
 			return markConnecting, "Moley · Connecting to " + st.name(p.ID)
 		}
 	}
-	if tunneled {
-		return markTunnel, tip
+	if st.DefaultExit == "" || st.DefaultExit == "direct" {
+		return markDirect, tip
 	}
-	return markDirect, tip
+	return markTunnel, tip
 }
 
 type profileStatus struct {

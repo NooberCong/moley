@@ -64,7 +64,14 @@ Section "Moley" Main
   Sleep 500
 
   SetOutPath "$INSTDIR"
+  ; The browser restarts its native host (moley.exe) within seconds, so the
+  ; file can be open again by now. A running exe can't be overwritten but
+  ; can be renamed: move it aside, write the new one, delete the old one
+  ; now or at the next restart.
+  Delete "$INSTDIR\moley.exe.old"
+  Rename "$INSTDIR\moley.exe" "$INSTDIR\moley.exe.old"
   File "${BIN}\moley.exe"
+  Delete /REBOOTOK "$INSTDIR\moley.exe.old"
   File "${BIN}\moley-ui.exe"
   File "${ROOT}\LICENSE"
   SetOutPath "$INSTDIR\extension"
@@ -126,7 +133,8 @@ Section "Uninstall"
   SendMessage ${HWND_BROADCAST} ${WM_WININICHANGE} 0 "STR:Environment" /TIMEOUT=2000
 
   RMDir /r "$INSTDIR\extension"
-  Delete "$INSTDIR\moley.exe"
+  Delete /REBOOTOK "$INSTDIR\moley.exe"
+  Delete "$INSTDIR\moley.exe.old"
   Delete "$INSTDIR\moley-ui.exe"
   Delete "$INSTDIR\LICENSE"
   Delete "$INSTDIR\uninstall.exe"

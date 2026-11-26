@@ -144,7 +144,7 @@ func (c *compiler) run() (*Output, error) {
 
 	// 0. System mode: learn each connection's name (TLS SNI, HTTP Host, or
 	// the FakeIP it was given), and answer DNS ourselves.
-	if c.cfg.Mode.TUN {
+	if c.cfg.SystemRouting() {
 		c.helper(obj{"inbound": list{InboundTUN}, "action": "sniff"})
 		c.helper(obj{"inbound": list{InboundTUN}, "protocol": list{"dns"}, "action": "hijack-dns"})
 	}
@@ -227,7 +227,7 @@ func (c *compiler) run() (*Output, error) {
 		// Process rules live in rule-set files the core can't see ahead of time.
 		"find_process": c.cfg.HasProcessRules(),
 	}
-	if c.cfg.Mode.TUN {
+	if c.cfg.SystemRouting() {
 		// Apps resolve names to placeholder addresses, so the real name is
 		// known when they connect and routes exactly like the browser path.
 		// Names that must work without Moley's routing resolve for real.
@@ -259,7 +259,7 @@ func (c *compiler) run() (*Output, error) {
 	}
 	if c.env.CacheFile != "" {
 		cache := obj{"enabled": true, "path": c.env.CacheFile}
-		if c.cfg.Mode.TUN {
+		if c.cfg.SystemRouting() {
 			cache["store_fakeip"] = true // apps keep their addresses across restarts
 		}
 		opts["experimental"] = obj{"cache_file": cache}

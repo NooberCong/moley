@@ -69,7 +69,7 @@ func Open(dir string, logs *engine.Logs) (*Daemon, error) {
 		return nil, err
 	}
 	_, err = d.engine.Apply(d.cfg)
-	if err != nil && d.cfg.Mode.TUN {
+	if err != nil && d.cfg.SystemRouting() {
 		// Keep the browser and exec routes working without system mode,
 		// and say why; a persistent kill switch still blocks the rest.
 		d.modeErr = "system mode is off: " + err.Error()

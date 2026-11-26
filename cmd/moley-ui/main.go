@@ -135,7 +135,7 @@ func (u *ui) onEvent(event string, data json.RawMessage) {
 	u.offline = ""
 	u.mu.Unlock()
 	u.app.Event.Emit(event, data)
-	if event == "status" || event == "traffic" {
+	if event == "status" { // the tray follows the status alone
 		u.refreshTray()
 	}
 }

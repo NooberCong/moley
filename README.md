@@ -104,7 +104,7 @@ flowchart LR
 ### Two ways to route
 
 - **Browser only** (default, no admin rights). The extension sends the browser through Moley; everything else on your computer is untouched.
-- **All apps.** Every app on the computer follows your rules, matched by name, so even apps that look up their own addresses route correctly. Turn it on in **Settings**.
+- **All apps.** While you're connected, every app on the computer follows your rules, matched by name, so even apps that look up their own addresses route correctly. Disconnected, Moley's network adapter goes away and only the browser is routed, unless the kill switch is on. Turn it on in **Settings**.
 
 ### Kill switch
 

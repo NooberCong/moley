@@ -77,6 +77,17 @@ const (
 // Kill reports the kill switch setting, "off" when unset.
 func (m Mode) Kill() string { return or(m.KillSwitch, KillSwitchOff) }
 
+// SystemRouting says whether the network adapter is up: system mode is on and
+// you're connected (everything else goes somewhere other than direct), or a
+// kill switch needs the adapter as the way out. Disconnected, it's down, and
+// rules and work networks route the browser and `moley exec` only.
+func (c Config) SystemRouting() bool {
+	if !c.Mode.TUN {
+		return false
+	}
+	return c.Mode.Kill() != KillSwitchOff || or(c.DefaultExit, ExitDirect) != ExitDirect
+}
+
 type Settings struct {
 	ProxyPort uint16 `json:"proxy_port,omitempty"` // mixed inbound, default 7890; hint inbound is ProxyPort+1
 	// HealthURL must answer 2xx quickly; used by wait/test. IPURL returns
