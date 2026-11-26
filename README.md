@@ -16,6 +16,21 @@ Your work VPN for the intranet, a streaming server for Netflix, your own connect
 
 [Install](#install) · [How it works](#how-it-works) · [Command line](#command-line) · [Build from source](#build-from-source) · [Design](docs/design.md)
 
+<br>
+
+<table>
+  <tr>
+    <td><img src="docs/images/home.png" width="270" alt="Home: connected to Tokyo, with latency and live traffic"></td>
+    <td><img src="docs/images/connections.png" width="270" alt="Choosing a connection: Office, Tokyo, Frankfurt, Zurich, Direct or Block all"></td>
+    <td><img src="docs/images/rules.png" width="270" alt="Rules: site picks, VPN networks and custom rules, in order"></td>
+  </tr>
+  <tr>
+    <td align="center"><sub><b>One button.</b> Where you are, how fast, what's moving.</sub></td>
+    <td align="center"><sub><b>Every connection, side by side.</b> Switch in a click.</sub></td>
+    <td align="center"><sub><b>Rules in plain order.</b> The first match wins.</sub></td>
+  </tr>
+</table>
+
 </div>
 
 ---

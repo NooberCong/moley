@@ -332,6 +332,7 @@ button.row:hover, .row.hoverable:hover { background: var(--raise); }
 .list.rules { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; column-gap: 12px; }
 .rules > li, .rules .row { display: grid; grid-column: 1 / -1; grid-template-columns: subgrid; align-items: center; }
 .rules .exit-chip { grid-column: 4; justify-self: end; max-width: 150px; }
+.rules button.row .text { grid-column: 2 / 4; } /* "Everything else" has no buttons */
 .icon-btn {
   display: grid; place-items: center; flex: none;
   width: 30px; height: 30px; padding: 7px; border: 0; border-radius: 9px;
