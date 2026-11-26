@@ -1,7 +1,7 @@
 ; Moley installer for Windows: the daemon and CLI (moley.exe) as a service,
 ; the tray app (moley-ui.exe), the browser extension's files and native host.
 ;
-;   makensis -DVERSION=0.2.0 -DBIN=<dir with the exes> -DEXT=<extension dist> moley.nsi
+;   makensis -DVERSION=0.3.0 -DBIN=<dir with the exes> -DEXT=<extension dist> moley.nsi
 ;
 ; Silent install: Moley-Setup.exe /S. With /launch (the updater passes it)
 ; the tray starts afterwards.

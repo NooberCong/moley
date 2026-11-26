@@ -11,13 +11,13 @@ docker rm -f moley-pkg >/dev/null 2>&1 || true
 trap '[ -n "${KEEP:-}" ] || docker rm -f moley-pkg >/dev/null 2>&1 || true' EXIT
 docker run -d --name moley-pkg --privileged --cgroupns=host -v /sys/fs/cgroup:/sys/fs/cgroup:rw moley-test-linux >/dev/null
 docker exec moley-pkg mkdir -p /t
-docker cp dist/linux/moley_0.2.0_amd64.deb moley-pkg:/t/
+docker cp dist/linux/moley_0.3.0_amd64.deb moley-pkg:/t/
 sleep 2
 docker exec moley-pkg bash -euc '
   apt-get update -qq >/dev/null
   # alice installs it with sudo, as on a desktop.
   echo "alice ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/alice
-  su alice -c "sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq /t/moley_0.2.0_amd64.deb" >/tmp/apt.log 2>&1 || { tail -20 /tmp/apt.log; exit 1; }
+  su alice -c "sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq /t/moley_0.3.0_amd64.deb" >/tmp/apt.log 2>&1 || { tail -20 /tmp/apt.log; exit 1; }
   grep -i "moley:\|service is installed" /tmp/apt.log || true
   systemctl is-active --quiet moley && echo "  ok   service active after install"
   id -nG alice | grep -qw moley && echo "  ok   alice is in the moley group"

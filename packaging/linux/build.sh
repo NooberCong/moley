@@ -5,7 +5,7 @@
 #   packaging/linux/build.sh [version]
 set -euo pipefail
 cd "$(dirname "$0")/../.."
-VERSION=${1:-0.2.0}
+VERSION=${1:-0.3.0}
 OUT=dist/linux
 mkdir -p "$OUT/units"
 (cd extension && npm ci --silent && npm run build --silent)

@@ -9,7 +9,7 @@
 set -euo pipefail
 export MSYS_NO_PATHCONV=1 # Git Bash: pass the container's /src paths to Docker as written
 cd "$(dirname "$0")/../.."
-VERSION=${1:-0.2.0}
+VERSION=${1:-0.3.0}
 OUT=dist/windows
 mkdir -p "$OUT"
 export GOOS=windows GOARCH=amd64 CGO_ENABLED=0

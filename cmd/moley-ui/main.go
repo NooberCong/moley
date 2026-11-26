@@ -27,7 +27,7 @@ import (
 var dist embed.FS
 
 // version is set at build time (-ldflags "-X main.version=…").
-var version = "0.2.0"
+var version = "0.3.0"
 
 func main() {
 	assets, err := fs.Sub(dist, "frontend/dist")
