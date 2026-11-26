@@ -68,12 +68,16 @@ func TestSystemMode(t *testing.T) {
 	if last["ip_is_private"] != true || last["outbound"] != model.ExitDirect || out.RuleIDs[len(out.RuleIDs)-1] != compile.LANRuleID {
 		t.Errorf("last rule should keep the LAN local: %v", last)
 	}
+	if r := opts.Route.Rules[len(opts.Route.Rules)-2]; r["action"] != "resolve" || r["server"] != compile.ResolverLocal || r["domain_regex"] == nil {
+		t.Errorf("the LAN's names should resolve with the OS just before: %v", r)
+	}
 	if !slices.ContainsFunc(opts.DNS.Servers, func(s map[string]any) bool { return s["type"] == "fakeip" }) {
 		t.Errorf("no fakeip server: %v", opts.DNS.Servers)
 	}
-	// Names routed direct resolve for real; everything else gets FakeIP.
+	// Local names resolve with the OS, names routed direct over DNS over
+	// HTTPS, and everything else gets FakeIP.
 	rules := opts.DNS.Rules
-	if n := len(rules); n < 3 || rules[n-1]["server"] != compile.ResolverFake || rules[n-2]["server"] != compile.ResolverLocal {
+	if n := len(rules); n != 3 || rules[0]["server"] != compile.ResolverLocal || rules[1]["server"] != compile.ResolverDoH || rules[2]["server"] != compile.ResolverFake {
 		t.Fatalf("dns rules: %v", rules)
 	}
 	direct, _ := json.Marshal(rules[len(rules)-2]["rule_set"])

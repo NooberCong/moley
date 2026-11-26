@@ -111,7 +111,8 @@ sealing later.)
   "quick": { "crunchyroll.com": "proton-jp-3" },  // one-click picks: host and subdomains → exit
   "default_exit": "direct",
 
-  "settings": { "proxy_port": 7890 },                              // hint inbound is proxy_port+1
+  "settings": { "proxy_port": 7890,                               // hint inbound is proxy_port+1
+                "direct_dns": "https://1.1.1.1/dns-query" },     // or "system" (the OS resolver)
   "mode": { "tun": false, "kill_switch": "off" }   // off | on | persistent; needs the service
 }
 ```
@@ -143,10 +144,20 @@ region-correct CDNs.
   unresolved. Proxy protocols resolve it on the server. WireGuard and OpenVPN endpoints
   resolve it through the tunnel's own DNS (from the `.conf`, or pushed by the OpenVPN
   server) via `domain_resolver`.
+- *Direct:* names resolve over **DNS over HTTPS** (`settings.direct_dns`, default
+  `https://1.1.1.1/dns-query`). Networks that block sites often do it by rewriting plain
+  DNS answers (to `127.0.0.1`, say), and a browser pointed at SOCKS hands Moley the
+  lookup it would otherwise have done with its own secure DNS. `"direct_dns": "system"`
+  uses the system resolver instead, for intranet names only an office network's DNS
+  knows.
+- *The LAN's names* (`.lan`, `.local`, `home.arpa`, bare names like `printer`) that no
+  rule claims resolve with the system resolver, the only one that can answer them, and
+  then stay on the LAN like any private address.
 - *TUN path:* `dns_mode: hijack`. A/AAAA queries get **FakeIP** answers, except domains
-  routed direct and a small exclude list (LAN, NTP, STUN, captive portals), which go to
-  the system resolver. The real name is then recovered at connect time, so routing works
-  the same as the browser path. Optimistic cache is on.
+  routed direct, which get real answers from the direct exit's resolver, and a small
+  exclude list (LAN, NTP, captive portals), which go to the system resolver. The real
+  name is then recovered at connect time, so routing works the same as the browser path.
+  Optimistic cache is on.
 
 **Reload without dropping connections.** A full sing-box rebuild drops every connection,
 so we keep rebuilds off the hot path.
@@ -539,7 +550,9 @@ Where the code settled details the design left open, or changed them:
   rebuilds.
 - **Probe** goes through the local SOCKS5 inbound (like the browser), so a failing exit
   is a connect error rather than a proxy 502 page, then reads the result from the
-  connection tracker.
+  connection tracker. SOCKS can only report "general failure", so the error is the
+  reason the core logged for that connection, and a site name that resolved to a
+  loopback address is called out as a likely DNS block.
 - **Connection history:** sing-box drops its closed-connection list on every GC, so the
   engine keeps its own last 512 closed connections for `conns` and the popup.
 - **Not yet:** `site` and

@@ -35,10 +35,12 @@ func TestEngine(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer e.Close()
+	e.TrustCAs(stack.DoHCA)
 
 	cfg := model.Config{
 		DefaultExit: model.ExitDirect,
-		Settings:    model.Settings{ProxyPort: freePort(t), HealthURL: stack.HealthURL(), IPURL: stack.PublicTraceURL()},
+		Settings: model.Settings{ProxyPort: freePort(t), HealthURL: stack.HealthURL(), IPURL: stack.PublicTraceURL(),
+			DirectDNS: stack.DoHURL},
 	}
 	add := func(id, name, data string) {
 		res, err := importer.Parse(name, []byte(data))
@@ -104,6 +106,33 @@ func TestEngine(t *testing.T) {
 		}
 	})
 
+	t.Run("direct resolves over DNS over HTTPS", func(t *testing.T) {
+		// A name the system resolver can't answer (as when the network
+		// rewrites plain DNS) resolves over DNS over HTTPS.
+		blocked := "http://" + teststack.BlockedHost + ":" + port + "/trace"
+		if ip, r := ipOf(blocked, ""); ip != teststack.IPDirect || r.Exit != model.ExitDirect || r.Resolver != compile.ResolverDoH {
+			t.Fatalf("blocked host: ip %q %+v", ip, r)
+		}
+		// With the system resolver the blocked host fails, and says why.
+		system := cfg.Clone()
+		system.Settings.DirectDNS = model.DirectDNSSystem
+		if _, err := e.Apply(system); err != nil {
+			t.Fatal(err)
+		}
+		defer func() {
+			if _, err := e.Apply(cfg); err != nil {
+				t.Fatal(err)
+			}
+			if st, err := e.WaitConnected(wctx, "sq1"); err != nil {
+				t.Fatalf("openvpn after restoring: %v (%+v)", err, st)
+			}
+		}()
+		r, err := e.Probe(ctx, blocked, "")
+		if err != nil || r.Resolver != compile.ResolverLocal || !strings.HasPrefix(r.Error, "lookup "+teststack.BlockedHost+": ") || !strings.Contains(r.Error, "NXDOMAIN") {
+			t.Fatalf("blocked host, system resolver: %+v %v", r, err)
+		}
+	})
+
 	t.Run("split tunnel from pushed routes", func(t *testing.T) {
 		// Pushed search domain: resolved by the pushed DNS, through the tunnel.
 		ip, r := ipOf("http://"+teststack.IntranetHost+":"+port+"/", "")
@@ -146,8 +175,13 @@ func TestEngine(t *testing.T) {
 		// Nothing listening: the engine reports the failed connect, it
 		// doesn't answer for the far end.
 		closed := itoa(int(freePort(t)))
-		if r, err := e.Probe(ctx, "tcp://127.0.0.1:"+closed, ""); err != nil || r.Error == "" || r.Exit != "direct" {
-			t.Fatalf("tcp to a closed port must fail: %+v %v", r, err)
+		if r, err := e.Probe(ctx, "tcp://127.0.0.1:"+closed, ""); err != nil || !strings.HasPrefix(r.Error, "dial tcp 127.0.0.1:"+closed+": ") || r.Exit != "direct" {
+			t.Fatalf("tcp to a closed port must fail with the core's reason: %+v %v", r, err)
+		}
+		// A site name that resolves to loopback is how DNS blocks look.
+		r, err = e.Probe(ctx, "tcp://"+teststack.BlockedHost+":"+closed, "")
+		if want := teststack.BlockedHost + " resolved to 127.0.0.1, so DNS is likely blocking it: dial tcp 127.0.0.1:" + closed + ": "; err != nil || !strings.HasPrefix(r.Error, want) {
+			t.Fatalf("name resolved to loopback: %+v %v", r, err)
 		}
 		for _, bad := range []string{"tcp://" + teststack.IntranetHost, "tcp://:" + port, "tcp://x:1/path", "ftp://x/"} {
 			if _, err := e.Probe(ctx, bad, ""); err == nil {

@@ -44,7 +44,10 @@ check "alice controls the service" as_alice "moley status --json"
 
 echo "== system mode"
 as_alice "moley mode --tun on" >/dev/null
-check "tun interface up" ip link show moley
+refuse "disconnected, the adapter stays down" ip link show moley
+as_alice "moley holds put e2e --for 30m" >/dev/null # up without connecting
+for _ in $(seq 50); do ip link show moley >/dev/null 2>&1 && break; sleep 0.1; done
+check "a hold brings the tun interface up" ip link show moley
 echo "nameserver 9.9.9.9" >/etc/resolv.conf # a resolver the TUN answers for
 out=$(curl -s --max-time 5 "http://$NET:8080/")
 [ "$out" = "$(printf 'ip=%s\nloc=XX' "$BOX")" ] && ok "unmatched traffic goes direct ($out)" || fail "direct: $out"

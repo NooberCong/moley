@@ -28,8 +28,10 @@ func main() {
 	defer s.Close()
 	for name, content := range map[string]string{
 		"work.ovpn": s.OVPN, "wg.conf": s.WG, "awg.conf": s.AWG, "ss.txt": s.SSLink,
-		"urls.txt": fmt.Sprintf("trace %s\npublic %s\nhealth %s\nintranet http://%s:%s/\n",
-			s.TraceURL(), s.PublicTraceURL(), s.HealthURL(), teststack.IntranetHost, port(s.EchoAddr)),
+		"urls.txt": fmt.Sprintf("trace %s\npublic %s\nhealth %s\nintranet http://%s:%s/\ndoh %s\nblocked http://%s:%s/trace\n",
+			s.TraceURL(), s.PublicTraceURL(), s.HealthURL(), teststack.IntranetHost, port(s.EchoAddr),
+			s.DoHURL, teststack.BlockedHost, port(s.EchoAddr)),
+		"doh-ca.pem": s.DoHCA,
 	} {
 		if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o600); err != nil {
 			fmt.Fprintln(os.Stderr, err)

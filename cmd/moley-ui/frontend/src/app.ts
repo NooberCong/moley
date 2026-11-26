@@ -7,6 +7,7 @@ type Mode = { tun: boolean; kill_switch: "off" | "on" | "persistent"; service: b
 type Status = {
   version: string;
   default_exit: string;
+  direct_dns: string; // a DNS-over-HTTPS URL, or "system"
   profiles: { id: string; kind: string; auto_rule?: boolean; state: string; error?: string }[];
   exits: string[];
   mode: Mode;
@@ -581,6 +582,13 @@ const setTun = (tun: boolean) => setMode("tun", { tun }, (m) => m.tun === tun);
 const setKill = (ks: Mode["kill_switch"], yes = false) =>
   setMode(`kill:${ks}`, yes ? { kill_switch: ks, yes } : { kill_switch: ks }, (m) => m.kill_switch === ks);
 
+// Secure DNS is on unless direct traffic uses the system resolver; turning
+// it on goes back to the default server.
+const secureDNS = (st: Status) => st.direct_dns !== "system";
+function setSecureDNS(on: boolean): void {
+  void act(() => hold("dns", "dns", () => rpc("dns.set", { direct_dns: on ? "" : "system" }), () => !!state.status && secureDNS(state.status) === on));
+}
+
 $("power").onclick = () => {
   if (state.offline) return void startDaemon();
   const st = state.status;
@@ -856,6 +864,12 @@ function settingsView(): Node[] {
     ? "On: blocks traffic that would bypass Moley while it runs. Always: also while Moley is off. Your local network keeps working."
     : "Needs the Moley service. Set it up under All apps.", seg, confirm);
 
+  const dns = held(h("button", { type: "button", class: "switch", role: "switch", "aria-checked": String(secureDNS(st)), "aria-label": "Secure DNS" }),
+    "dns", doing("dns", "dns"));
+  dns.onclick = () => setSecureDNS(!secureDNS(state.status!));
+  const dnsRow = setting("Secure DNS",
+    "Look up sites privately, so your network can't block or see them. Turn off if work network names stop resolving.", dns);
+
   const login = held(h("button", { type: "button", class: "switch", role: "switch", "aria-checked": "false", "aria-label": "Launch at startup" }),
     "login", true);
   void bridge<boolean>("Autostart").then((on) => login.setAttribute("aria-checked", String(on)));
@@ -871,7 +885,7 @@ function settingsView(): Node[] {
   update.onclick = () => checkUpdate(update, version);
   const aboutRow = setting("Version", "", update, version);
 
-  return [pageHead("Settings", ""), h("ul", { class: "panel list" }, everyRow, killRow, loginRow, aboutRow)];
+  return [pageHead("Settings", ""), h("ul", { class: "panel list" }, everyRow, killRow, dnsRow, loginRow, aboutRow)];
 }
 
 function confirmAlways(detail: HTMLElement): void {

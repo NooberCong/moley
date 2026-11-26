@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -241,9 +242,46 @@ func (e *Engine) Probe(ctx context.Context, target, exit string) (ProbeResult, e
 				res.Resolver = out.Resolver[c.Chain[len(c.Chain)-1]]
 			}
 		}
+		if err != nil {
+			// SOCKS can only say "general failure"; the core logged why.
+			if reason := e.connError(p); reason != "" {
+				res.Error = dnsBlockHint(u.Hostname(), reason)
+			}
+		}
 	default:
 	}
 	return res, nil
+}
+
+// dialAddr is the address in a dial error: "dial tcp 127.0.0.1:443: …".
+var dialAddr = regexp.MustCompile(`dial \w+ \[?([0-9A-Fa-f.:]+?)\]?:\d+: `)
+
+// dnsBlockHint names the usual cause when a site's name resolved to a
+// loopback or unspecified address: the network's DNS hides it.
+func dnsBlockHint(host, reason string) string {
+	m := dialAddr.FindStringSubmatch(reason)
+	if m == nil || host == "localhost" {
+		return reason
+	}
+	if _, err := netip.ParseAddr(host); err == nil {
+		return reason
+	}
+	if ip, err := netip.ParseAddr(m[1]); err != nil || !(ip.IsLoopback() || ip.IsUnspecified()) {
+		return reason
+	}
+	return fmt.Sprintf("%s resolved to %s, so DNS is likely blocking it: %s", host, m[1], reason)
+}
+
+// connError waits briefly for the core to log why it failed a connection:
+// it may answer the client before it logs.
+func (e *Engine) connError(srcPort uint16) string {
+	for range 20 {
+		if reason := e.logs.ConnError(srcPort); reason != "" {
+			return reason
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	return ""
 }
 
 // get fetches target over dial: one request, no redirects, the start of the body.

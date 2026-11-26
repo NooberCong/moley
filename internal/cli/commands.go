@@ -40,6 +40,7 @@ func init() {
 		{"rules move", "<id> <index>", "Move a rule (0 = first).", "moley rules move stream 0", cmdRulesMove},
 		{"quick", "<host> <exit|none>", "Route a site and its subdomains via an exit (the extension's one-click pick). No reconnects.", "moley quick crunchyroll.com jp", cmdQuick},
 		{"default", "<exit>", "Exit for traffic no rule matches.", "moley default direct", cmdDefault},
+		{"dns", "[<https-url>|system|default]", "How the direct exit looks up names: DNS over HTTPS (default " + model.DefaultDirectDNS + ") or system, the OS resolver (for names only an office network's DNS knows). No argument shows it.", "moley dns system", cmdDNS},
 		{"holds", "", "Who keeps the network adapter up, and until when.", "moley holds", cmdHolds},
 		{"holds put", "<name> [--for 30m]", "Keep the network adapter up (system mode) for a while without changing where anything goes, so every program follows the rules while you're disconnected. Putting a name again renews it; it lapses on its own (at most 24h).", "moley holds put my-agent --for 1h", cmdHoldsPut},
 		{"holds release", "<name>", "Release a hold. Releasing one that's gone is not an error.", "moley holds release my-agent", cmdHoldsRelease},
@@ -553,6 +554,28 @@ func cmdDefault(c *call) error {
 		return err
 	}
 	return c.emit(res, func(w io.Writer) { fmt.Fprintf(w, "default exit → %s\n", c.args[0]) })
+}
+
+func cmdDNS(c *call) error {
+	if err := c.parse(0, 1); err != nil {
+		return err
+	}
+	if len(c.args) == 0 {
+		var st daemon.StatusResult
+		if err := c.rpc("status", nil, &st); err != nil {
+			return err
+		}
+		return c.emit(map[string]any{"direct_dns": st.DirectDNS}, func(w io.Writer) { fmt.Fprintln(w, st.DirectDNS) })
+	}
+	v := c.args[0]
+	if v == "default" {
+		v = ""
+	}
+	var res map[string]any
+	if err := c.rpc("dns.set", daemon.DNSParams{DirectDNS: v}, &res); err != nil {
+		return err
+	}
+	return c.emit(res, func(w io.Writer) { fmt.Fprintf(w, "direct dns → %v\n", res["direct_dns"]) })
 }
 
 func cmdProbe(c *call) error {

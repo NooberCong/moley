@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net/netip"
+	"net/url"
 	"regexp"
 	"slices"
 	"strings"
@@ -97,12 +98,18 @@ type Settings struct {
 	// "ip=…" / "loc=…" lines (Cloudflare trace format).
 	HealthURL string `json:"health_url,omitempty"`
 	IPURL     string `json:"ip_url,omitempty"`
+	// DirectDNS is how the direct exit resolves names: a DNS-over-HTTPS URL,
+	// or "system" for the OS resolver. Encrypted by default: networks that
+	// block sites often do it by rewriting plain DNS answers.
+	DirectDNS string `json:"direct_dns,omitempty"`
 }
 
 const (
 	DefaultProxyPort = 7890
 	DefaultHealthURL = "https://www.gstatic.com/generate_204"
 	DefaultIPURL     = "https://www.cloudflare.com/cdn-cgi/trace"
+	DefaultDirectDNS = "https://1.1.1.1/dns-query"
+	DirectDNSSystem  = "system"
 )
 
 func (s Settings) Port() uint16 {
@@ -114,6 +121,20 @@ func (s Settings) Port() uint16 {
 
 func (s Settings) Health() string { return or(s.HealthURL, DefaultHealthURL) }
 func (s Settings) IP() string     { return or(s.IPURL, DefaultIPURL) }
+
+// DoH is the direct exit's DNS-over-HTTPS server, or nil when it uses the
+// OS resolver.
+func (s Settings) DoH() *url.URL {
+	v := or(s.DirectDNS, DefaultDirectDNS)
+	if v == DirectDNSSystem {
+		return nil
+	}
+	u, err := url.Parse(v)
+	if err != nil || u.Scheme != "https" || u.Hostname() == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
+		return nil
+	}
+	return u
+}
 
 func or(v, d string) string {
 	if v == "" {
@@ -332,6 +353,9 @@ func (c *Config) Validate() error {
 		}
 	default:
 		return fmt.Errorf("mode.kill_switch: %q is not off, on or persistent", c.Mode.KillSwitch)
+	}
+	if d := c.Settings.DirectDNS; d != "" && d != DirectDNSSystem && c.Settings.DoH() == nil {
+		return fmt.Errorf("settings.direct_dns: %q is not %q or an https:// URL like %s", d, DirectDNSSystem, DefaultDirectDNS)
 	}
 	if c.Settings.ProxyPort == 65535 {
 		return errors.New("settings.proxy_port: needs room for the hint port (proxy_port+1)")

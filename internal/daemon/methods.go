@@ -63,6 +63,7 @@ func init() {
 		"rules.move":       def("Move a rule to a new index.", moveRule),
 		"quick.set":        def("Route a host (and its subdomains) via an exit; empty exit clears (no rebuild).", setQuick),
 		"default.set":      def("Set the exit for traffic no rule matches.", setDefault),
+		"dns.set":          def("How the direct exit looks up names: a DNS-over-HTTPS URL, system (the OS resolver), or empty for the default.", setDNS),
 		"holds.put":        def("Keep the network adapter up for a while (system mode), without changing where anything goes. Putting a name again renews it; each hold lapses on its own.", putHold),
 		"holds.release":    def("Release a hold by name; releasing one that's gone is not an error.", releaseHold),
 		"config.export":    def("The whole config; secrets redacted unless reveal.", exportConfig),
@@ -98,6 +99,7 @@ type StatusResult struct {
 	Running     bool          `json:"running"`
 	ProxyPort   uint16        `json:"proxy_port"`
 	DefaultExit string        `json:"default_exit"`
+	DirectDNS   string        `json:"direct_dns"` // a DNS-over-HTTPS URL or "system"
 	Profiles    []ProfileInfo `json:"profiles"`
 	Exits       []string      `json:"exits"`
 	Rules       int           `json:"rules"`
@@ -125,8 +127,9 @@ func status(_ context.Context, d *Daemon, _ platform.Caller, _ none) (any, error
 	d.mu.Unlock()
 	return StatusResult{
 		Version: Version, Running: d.engine.Running(), ProxyPort: cfg.Settings.Port(),
-		DefaultExit: or(cfg.DefaultExit, model.ExitDirect), Profiles: d.profileInfos(cfg),
-		Exits: cfg.ExitIDs(), Rules: len(cfg.Rules), QuickPicks: len(cfg.Quick),
+		DefaultExit: or(cfg.DefaultExit, model.ExitDirect), DirectDNS: or(cfg.Settings.DirectDNS, model.DefaultDirectDNS),
+		Profiles: d.profileInfos(cfg),
+		Exits:    cfg.ExitIDs(), Rules: len(cfg.Rules), QuickPicks: len(cfg.Quick),
 		Mode: ModeInfo{TUN: cfg.Mode.TUN, KillSwitch: cfg.Mode.Kill(), Service: platform.System(),
 			SystemRouting: cfg.SystemRouting(len(holds) > 0), Error: modeErr},
 		Holds: holds,
@@ -576,6 +579,25 @@ func setDefault(_ context.Context, d *Daemon, c platform.Caller, p ExitParams) (
 		return nil, err
 	}
 	return map[string]any{"default_exit": p.Exit, "rebuilt": res.Rebuilt}, nil
+}
+
+type DNSParams struct {
+	DirectDNS string `json:"direct_dns"`
+}
+
+func setDNS(_ context.Context, d *Daemon, c platform.Caller, p DNSParams) (any, error) {
+	if p.DirectDNS == model.DefaultDirectDNS {
+		p.DirectDNS = "" // the default is stored as unset, so it follows a new default
+	}
+	shown := or(p.DirectDNS, model.DefaultDirectDNS)
+	res, _, err := d.mutate(c, "dns.set", false, func(cfg *model.Config) (string, error) {
+		cfg.Settings.DirectDNS = p.DirectDNS
+		return "direct dns → " + shown, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{"direct_dns": shown, "rebuilt": res.Rebuilt}, nil
 }
 
 // --- config ------------------------------------------------------------------

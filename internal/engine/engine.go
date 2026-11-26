@@ -64,6 +64,14 @@ func New(dir, secret string, logs *Logs) (*Engine, error) {
 	}, nil
 }
 
+// TrustCAs adds PEM certificates to the ones the core trusts, from the next
+// Apply on. Tests trust the local stack's DNS-over-HTTPS server with it.
+func (e *Engine) TrustCAs(pem ...string) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.env.RootCAs = append(e.env.RootCAs, pem...)
+}
+
 // ApplyResult says how a config was applied.
 type ApplyResult struct {
 	Rebuilt bool `json:"rebuilt"`

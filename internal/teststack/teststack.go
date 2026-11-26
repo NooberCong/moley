@@ -5,6 +5,7 @@
 //   - an OpenVPN server that pushes a route (10.99.0.0/16), a DNS server
 //     and a search domain (corp.test), like a corporate VPN
 //   - a WireGuard server, a Shadowsocks server and an AmneziaWG server
+//   - a DNS-over-HTTPS server that knows a name plain DNS doesn't
 //
 // Each server leaves through its own loopback source address, so the echo
 // server's answer proves which exit carried a request:
@@ -68,12 +69,15 @@ type Stack struct {
 	WG       string // client WireGuard .conf
 	AWG      string // client AmneziaWG .conf
 	SSLink   string // ss:// share link
+	DoHURL   string // DNS-over-HTTPS server (see BlockedHost)
+	DoHCA    string // PEM certificate that signs DoHURL's
 
 	OpenVPNPort int // UDP port, e.g. to block it
 	box         *box.Box
 	echo        *http.Server
 	awg         *device.Device
 	awgHTTP     *http.Server
+	doh         *http.Server
 }
 
 // TraceURL is the echo endpoint in Cloudflare trace format, reached directly.
@@ -96,6 +100,7 @@ func (s *Stack) Close() {
 	s.echo.Close()
 	s.awgHTTP.Close()
 	s.awg.Close()
+	s.doh.Close()
 }
 
 // Echo answers /trace with the caller's IP, /generate_204 with 204, and
@@ -210,6 +215,10 @@ func Start() (*Stack, error) {
 
 	if err := s.startAWG(awgPort); err != nil {
 		s.box.Close()
+		return nil, err
+	}
+	if err := s.startDoH(ca, caKey); err != nil {
+		s.Close()
 		return nil, err
 	}
 
@@ -336,7 +345,7 @@ func newCA() (string, *ecdsa.PrivateKey) {
 	return string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})), key
 }
 
-func newLeaf(caPEM string, caKey *ecdsa.PrivateKey, cn string, eku x509.ExtKeyUsage) (cert, key string) {
+func newLeaf(caPEM string, caKey *ecdsa.PrivateKey, cn string, eku x509.ExtKeyUsage, ips ...net.IP) (cert, key string) {
 	block, _ := pem.Decode([]byte(caPEM))
 	ca, _ := x509.ParseCertificate(block.Bytes)
 	k, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
@@ -344,6 +353,7 @@ func newLeaf(caPEM string, caKey *ecdsa.PrivateKey, cn string, eku x509.ExtKeyUs
 		SerialNumber: big.NewInt(time.Now().UnixNano()), Subject: pkix.Name{CommonName: cn},
 		NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(24 * time.Hour),
 		KeyUsage: x509.KeyUsageDigitalSignature | x509.KeyUsageKeyAgreement, ExtKeyUsage: []x509.ExtKeyUsage{eku},
+		IPAddresses: ips,
 	}
 	der, _ := x509.CreateCertificate(rand.Reader, tpl, ca, &k.PublicKey, caKey)
 	kd, _ := x509.MarshalPKCS8PrivateKey(k)

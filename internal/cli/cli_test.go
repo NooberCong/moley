@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"moley/internal/cli"
+	"moley/internal/model"
 	"moley/internal/teststack"
 )
 
@@ -155,6 +156,24 @@ func TestCLI(t *testing.T) {
 		}
 		if r := run(t, "holds", "release", "agent-1"); r.exit != cli.ExitOK || !strings.Contains(r.stdout, "no hold named agent-1") {
 			t.Fatalf("second release: %d %s", r.exit, r.stdout)
+		}
+	})
+
+	t.Run("dns", func(t *testing.T) {
+		if r := run(t, "dns"); strings.TrimSpace(r.stdout) != model.DefaultDirectDNS {
+			t.Fatalf("default: %q", r.stdout)
+		}
+		run(t, "dns", "system").code(t, cli.ExitOK)
+		if out := run(t, "status", "--json").json(t); out["direct_dns"] != model.DirectDNSSystem {
+			t.Fatalf("status after system: %v", out["direct_dns"])
+		}
+		r := run(t, "dns", "http://1.1.1.1/dns-query", "--json")
+		r.code(t, cli.ExitUsage)
+		if r.errJSON(t)["code"] != "invalid_params" {
+			t.Fatalf("plain http should be refused: %s", r.stderr)
+		}
+		if out := run(t, "dns", "default", "--json").json(t); out["direct_dns"] != model.DefaultDirectDNS {
+			t.Fatalf("back to default: %v", out)
 		}
 	})
 

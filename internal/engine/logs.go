@@ -2,6 +2,8 @@ package engine
 
 import (
 	"io"
+	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -79,6 +81,41 @@ func (l *Logs) Since(t time.Time, limit int) []LogLine {
 		res = res[len(res)-limit:]
 	}
 	return res
+}
+
+var (
+	ansiColor = regexp.MustCompile(`\x1b\[[0-9;]*m`)
+	// connTag starts each core line about a connection: "[3188027734 9ms] ".
+	connTag = regexp.MustCompile(`\[(\d+) [^\]]*\] `)
+)
+
+// ConnError is why the core failed the last connection it accepted from
+// 127.0.0.1:srcPort, as it logged it: "lookup example.com: NXDOMAIN", say.
+// "" if it logged no error for it (yet).
+func (l *Logs) ConnError(srcPort uint16) string {
+	from := "inbound connection from 127.0.0.1:" + strconv.Itoa(int(srcPort))
+	id, cause := "", ""
+	for _, ln := range l.Since(time.Time{}, 0) {
+		msg := ansiColor.ReplaceAllString(ln.Message, "")
+		tag := connTag.FindStringSubmatchIndex(msg)
+		if tag == nil {
+			continue
+		}
+		line, lineID := msg[tag[1]:], msg[tag[2]:tag[3]]
+		switch {
+		case strings.HasSuffix(line, from): // a newer connection from the same port
+			id, cause = lineID, ""
+		case lineID == id && ln.Level == "error" && cause == "":
+			// "connection: open connection to host:443 using outbound/x[x]: cause"
+			cause = line
+			if _, rest, ok := strings.Cut(line, " using "); ok {
+				if _, c, ok := strings.Cut(rest, "]: "); ok {
+					cause = c
+				}
+			}
+		}
+	}
+	return cause
 }
 
 type discard struct{}

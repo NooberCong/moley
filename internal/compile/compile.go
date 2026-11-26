@@ -11,8 +11,11 @@ package compile
 import (
 	"encoding/json"
 	"fmt"
+	"net/netip"
+	"net/url"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 
 	"moley/internal/awg"
@@ -42,17 +45,23 @@ const LANRuleID = "lan"
 // Resolver labels (also DNS server tags).
 const (
 	ResolverLocal  = "local"  // the OS resolver
+	ResolverDoH    = "doh"    // the direct exit's DNS over HTTPS (settings.direct_dns)
 	ResolverRemote = "remote" // the proxy server resolves the name
 	ResolverFake   = "fakeip" // system mode: apps get a placeholder address
 )
 
+// lanNames are the local network's own names; only its DNS (or mDNS) can
+// answer them. singleLabel matches bare names ("printer", "nas").
+var lanNames = []string{"lan", "local", "localhost", "home.arpa"}
+
+const singleLabel = `^[^.]+$`
+
 // localNames resolve for real even in system mode: local networks, and
 // the probes the OS uses to detect captive portals and set the clock.
-var localNames = []string{
-	"lan", "local", "localhost", "home.arpa",
+var localNames = append(slices.Clone(lanNames),
 	"msftconnecttest.com", "msftncsi.com", "time.windows.com", "pool.ntp.org", "time.google.com",
 	"connectivitycheck.gstatic.com", "captive.apple.com", "detectportal.firefox.com", "nmcheck.gnome.org",
-}
+)
 
 // HintUser is the proxy username that forces an exit on the hint inbound:
 // the exit id itself. (No prefix: HTTP Basic auth can't carry a ':' in
@@ -73,6 +82,9 @@ type Env struct {
 	// Held keeps the network adapter up whatever the config says: a client
 	// holds system routing (see model.Config.SystemRouting).
 	Held bool
+	// RootCAs are PEM certificates trusted beside the system's (the test
+	// stack's DNS-over-HTTPS server).
+	RootCAs []string
 }
 
 type Output struct {
@@ -84,8 +96,9 @@ type Output struct {
 	// RuleIDs names each route rule by index so the engine can report the
 	// Moley rule a connection matched. Helper rules (resolve) are "".
 	RuleIDs []string
-	// Resolver says where names routed to each exit are resolved: "local",
-	// "remote" (by the proxy server) or a tunnel DNS server tag.
+	// Resolver says where names routed to each exit are resolved: "doh" or
+	// "local" (as the direct exit does), "remote" (by the proxy server) or a
+	// tunnel DNS server tag.
 	Resolver map[string]string
 }
 
@@ -111,14 +124,20 @@ type compiler struct {
 	remote     map[string]bool
 	dnsServers list
 	dnsRules   list
-	directSets list // rule-sets whose traffic goes direct: real DNS in system mode
+	directSets list   // rule-sets whose traffic goes direct: real DNS in system mode
+	direct     string // the direct exit's resolver: ResolverDoH or ResolverLocal
 }
 
 func (c *compiler) run() (*Output, error) {
 	outbounds := list{obj{"type": "direct", "tag": model.ExitDirect}, obj{"type": "block", "tag": model.ExitBlock}}
 	var endpoints list
 	c.dnsServers = list{obj{"type": "local", "tag": ResolverLocal}}
-	c.out.Resolver[model.ExitDirect] = ResolverLocal
+	c.direct = ResolverLocal
+	if u := c.cfg.Settings.DoH(); u != nil {
+		c.dnsServers = append(c.dnsServers, dohServer(u))
+		c.direct = ResolverDoH
+	}
+	c.out.Resolver[model.ExitDirect] = c.direct
 	c.remote = map[string]bool{}
 
 	for _, p := range c.cfg.Profiles {
@@ -209,7 +228,10 @@ func (c *compiler) run() (*Output, error) {
 			c.directSets = append(c.directSets, tags...)
 		}
 	}
-	// 5. Private addresses stay on the LAN unless a rule above said otherwise.
+	// 5. The local network stays local unless a rule above said otherwise:
+	// its names resolve with the OS resolver (only it can answer them, and
+	// a failed lookup ends the connection), then private addresses go direct.
+	c.helper(obj{"domain_suffix": lanNames, "domain_regex": list{singleLabel}, "action": "resolve", "server": ResolverLocal})
 	c.route(obj{"ip_is_private": true}, model.ExitDirect, LANRuleID)
 
 	port := c.cfg.Settings.Port()
@@ -226,7 +248,7 @@ func (c *compiler) run() (*Output, error) {
 		"rule_set": orEmpty(c.ruleSets),
 		"final":    DefaultOutbound,
 		// Dials resolve for real; FakeIP is only ever handed to apps.
-		"default_domain_resolver": obj{"server": ResolverLocal},
+		"default_domain_resolver": obj{"server": c.direct},
 		// Process rules live in rule-set files the core can't see ahead of time.
 		"find_process": c.cfg.HasProcessRules(),
 	}
@@ -240,7 +262,7 @@ func (c *compiler) run() (*Output, error) {
 			"inet4_range": "198.18.0.0/15", "inet6_range": "2001:2::/48"})
 		c.dnsRules = append(c.dnsRules, obj{"domain_suffix": localNames, "server": ResolverLocal})
 		if len(c.directSets) > 0 {
-			c.dnsRules = append(c.dnsRules, obj{"rule_set": c.directSets, "server": ResolverLocal})
+			c.dnsRules = append(c.dnsRules, obj{"rule_set": c.directSets, "server": c.direct})
 		}
 		c.dnsRules = append(c.dnsRules, obj{"query_type": list{"A", "AAAA"}, "server": ResolverFake})
 		inbounds = append(inbounds, obj{
@@ -252,13 +274,16 @@ func (c *compiler) run() (*Output, error) {
 	}
 	opts := obj{
 		"log":       obj{"level": logLevel, "output": c.env.LogOutput},
-		"dns":       obj{"servers": c.dnsServers, "rules": orEmpty(c.dnsRules), "final": ResolverLocal},
+		"dns":       obj{"servers": c.dnsServers, "rules": orEmpty(c.dnsRules), "final": c.direct},
 		"inbounds":  inbounds,
 		"outbounds": outbounds,
 		"route":     route,
 	}
 	if len(endpoints) > 0 {
 		opts["endpoints"] = endpoints
+	}
+	if len(c.env.RootCAs) > 0 {
+		opts["certificate"] = obj{"certificate": c.env.RootCAs}
 	}
 	if c.env.CacheFile != "" {
 		cache := obj{"enabled": true, "path": c.env.CacheFile}
@@ -330,10 +355,10 @@ var defaultRoutePushes = []string{
 }
 
 // tunnelDNS adds a resolver reached through the profile's tunnel. Without a
-// configured DNS server, names fall back to the local resolver.
+// configured DNS server, names resolve the way the direct exit's do.
 func (c *compiler) tunnelDNS(p model.Profile) {
 	if len(p.DNS) == 0 {
-		c.out.Resolver[p.ID] = ResolverLocal
+		c.out.Resolver[p.ID] = c.direct
 		return
 	}
 	tag := "tunnel:" + p.ID
@@ -373,7 +398,7 @@ func (c *compiler) resolverOf(exit string) string {
 
 // route appends a route rule. When the exit resolves names through a tunnel
 // DNS server, a resolve rule goes first so the name never leaks to the
-// local resolver.
+// direct exit's resolver.
 func (c *compiler) route(match obj, exit, id string) { c.addRule(match, exit, id, true) }
 
 // helper appends a non-routing rule (sniff, hijack-dns).
@@ -383,7 +408,7 @@ func (c *compiler) helper(rule obj) {
 }
 
 func (c *compiler) addRule(match obj, exit, id string, resolve bool) {
-	if r := c.out.Resolver[exit]; resolve && r != "" && r != ResolverLocal && r != ResolverRemote {
+	if r := c.out.Resolver[exit]; resolve && r != "" && r != c.direct && r != ResolverRemote {
 		c.rules = append(c.rules, with(match, obj{"action": "resolve", "server": r}))
 		c.out.RuleIDs = append(c.out.RuleIDs, "")
 	}
@@ -395,6 +420,22 @@ func (c *compiler) localSet(tag string, content []byte) {
 	c.ruleSets = append(c.ruleSets, obj{"type": "local", "tag": tag, "format": "source",
 		"path": filepath.Join(c.env.RulesDir, tag+".json")})
 	c.out.Files[tag+".json"] = content
+}
+
+// dohServer is the direct exit's DNS-over-HTTPS server. A server given by
+// name is looked up with the OS resolver first.
+func dohServer(u *url.URL) obj {
+	s := obj{"type": "https", "tag": ResolverDoH, "server": u.Hostname()}
+	if port, err := strconv.Atoi(u.Port()); err == nil {
+		s["server_port"] = port
+	}
+	if u.Path != "" {
+		s["path"] = u.Path
+	}
+	if _, err := netip.ParseAddr(u.Hostname()); err != nil {
+		s["domain_resolver"] = ResolverLocal
+	}
+	return s
 }
 
 func with(a, b obj) obj {

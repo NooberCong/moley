@@ -107,6 +107,10 @@ flowchart LR
 - **All apps.** While you're connected, every app on the computer follows your rules, matched by name, so even apps that look up their own addresses route correctly. Disconnected, Moley's network adapter goes away and only the browser is routed, unless the kill switch is on or something holds it up. Turn it on in **Settings**.
   - **Holds.** A script or AI agent that needs a work network from a program like `psql` or `ssh` can hold the adapter up for a while (`moley holds put <name> --for 30m`) without connecting, so where everything else goes doesn't change. Each hold lapses on its own, and holds from different agents never undo each other. The tray names whoever holds it and can release a hold, and **All apps** on Home reads *Held on*.
 
+### Secure DNS
+
+Sites that go direct are looked up over encrypted DNS (DNS over HTTPS, `https://1.1.1.1/dns-query` by default), so a network that blocks sites by faking DNS answers can't block them, just as your browser's own secure DNS would. Your local network's names (`router.lan`, `printer`) still use the system resolver. If names that only your office network knows stop resolving, turn **Secure DNS** off in **Settings** (`moley dns system`), or point it at another server (`moley dns https://dns.example/dns-query`).
+
 ### Kill switch
 
 | Setting | What it does |
@@ -124,7 +128,7 @@ Your local network stays reachable in every setting. Built on the Windows Filter
 | **Home** | Your connection at a glance: where everything goes, your public address, latency and live traffic. One button to connect or disconnect. |
 | **Activity** | Every connection as it happens, with the rule and route it actually took. |
 | **Rules** | Your routes in order. Add, edit, rename and reorder them. |
-| **Settings** | All apps, kill switch, launch at startup and updates. |
+| **Settings** | All apps, kill switch, secure DNS, launch at startup and updates. |
 
 Name your connections whatever you like (`Office`, `Tokyo`, `Home`); the app, the tray menu, notifications and the extension all use the name.
 
