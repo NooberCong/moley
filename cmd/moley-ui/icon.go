@@ -91,8 +91,8 @@ const (
 func drawIcon(size int, m mark) []byte {
 	img := image.NewNRGBA(image.Rect(0, 0, size, size))
 	s := float64(size) / 128
-	const ss = 4       // supersampling per axis
-	dots := size >= 48 // too fine to read smaller
+	const ss = 4         // supersampling per axis
+	detail := size >= 48 // the map and glow, too fine to read smaller
 	for y := range size {
 		for x := range size {
 			var r, g, b, a float64 // premultiplied sums
@@ -103,7 +103,7 @@ func drawIcon(size int, m mark) []byte {
 					if roundedRect(px, py, 4, 4, 124, 124, 28) > 0 {
 						continue
 					}
-					c := markAt(px, py, m, dots)
+					c := markAt(px, py, m, detail)
 					r, g, b, a = r+c[0], g+c[1], b+c[2], a+1
 				}
 			}
@@ -119,7 +119,7 @@ func drawIcon(size int, m mark) []byte {
 }
 
 // markAt is the colour (0..1 RGB) of the mark at a point inside the tile.
-func markAt(x, y float64, m mark, dots bool) [3]float64 {
+func markAt(x, y float64, m mark, detail bool) [3]float64 {
 	tone, white := rgb(m.tone), [3]float64{1, 1, 1}
 	d := polygon(x, y, shield)
 	if d < 0 {
@@ -128,23 +128,27 @@ func markAt(x, y float64, m mark, dots bool) [3]float64 {
 			face = lerp(tone, white, 0.75)
 		}
 		if x > 64 { // the right half in the shade
-			face = lerp(face, tone, 0.14)
+			face = lerp(face, tone, 0.22)
 		}
 		if math.Abs(d+shieldRim) < 1.1 { // the inset rim
-			face = lerp(face, tone, 0.35)
+			face = lerp(face, rgb(m.deep), 0.5)
 		}
 		return face
 	}
-	c := lerp(tone, rgb(m.deep), y/128) // the tile, lighter at the top
+	// The tile, deep green fading deeper down.
+	c := lerp(lerp(tone, rgb(m.deep), 0.35), scale(rgb(m.deep), 0.8), y/128)
+	if !detail { // small: just the tile and the shield, for contrast
+		return c
+	}
 	glow := 0.0
 	if m.lit {
-		glow = math.Exp(-d / 10)
+		glow = math.Exp(-d / 6)
 	}
-	if dots && onDot(x, y) {
-		c = lerp(c, white, 0.2+0.3*glow)
+	if onDot(x, y) {
+		c = lerp(c, white, 0.12+0.2*glow)
 	}
-	// The bolt lights the tile around it.
-	return lerp(c, lerp(tone, white, 0.45), 0.7*glow)
+	// The shield lights the tile just around it.
+	return lerp(c, lerp(tone, white, 0.3), 0.35*glow)
 }
 
 // onDot reports whether a point is on one of the world map's dots.
